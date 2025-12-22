@@ -431,9 +431,11 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         # return empty DataFrame with same columns
         rival_asins = pd.DataFrame(columns=['ASIN', 'monthly_sales', 'url', 'product_title', 'listing_date'])
             
+    ST_COLS = ['ASIN', 'price', 'monthly_sales', 'listing_date','url']
+            
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 
-    st.dataframe(trimmed_df[['ASIN', 'price', 'monthly_sales', 'listing_date','url']])
+    st.dataframe(trimmed_df[ST_COLS])
 
     display_images(trimmed_df)
 
@@ -449,7 +451,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
     fast_growing_asins = get_fast_growing_asins(sales, asin_price_sales, growth_cutoff = growth_cutoff, sales_cutoff = 200)
     fast_growing_asins = fast_growing_asins.merge(df[DISPLAY_COLS], on = 'ASIN')
-    st.write(fast_growing_asins)
+    st.write(fast_growing_asins[ST_COLS])
 
 
     

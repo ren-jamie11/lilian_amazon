@@ -350,10 +350,10 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     df = st.session_state["df"]
     summary = st.session_state['summary']
 
-    tabs = st.tabs(["Micro", "Macro"])
+    tabs = st.tabs(["单品", "总体"])
 
     with tabs[0]:  # Micro tab
-        st.header("Micro View")
+        st.markdown("#### 单品分析")
 
         our_asin = st.text_input(
         "ASIN:",
@@ -378,7 +378,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             )
 
     with tabs[1]:  # Macro tab
-        st.header("Macro View")
+        st.markdown("#### 总体分析")
 
         c3, c4 = st.columns([5,5])
         with c3:

@@ -290,7 +290,7 @@ def filter_dataframe(df: pd.DataFrame, filter_columns = []) -> pd.DataFrame:
     return df
 
 
-def display_images(trimmed_df, n_display = 50):
+def display_images(trimmed_df, n_display = 9):
         if len(trimmed_df) > n_display:
             trimmed_sample = trimmed_df.iloc[:n_display, :]
         else:

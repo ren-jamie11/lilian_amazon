@@ -327,9 +327,9 @@ def display_images(trimmed_df, n_display = 50):
                         f"""
                         **ASIN:** {to_str(row.get("ASIN", []))}  
                         **Brand:** {to_str(row.get("brand", []))}  
-                        **Listing date:** {to_str(row.get("listing_date", []))}  
+                        **Listing date:** {listing_date}  
                         **Price:** {to_str(row.get("price", []))}  
-                        **Monthly sales:** {listing_date}
+                        **Monthly sales:** {to_str(row.get("monthly_sales", []))}  
                         """
                     )
 

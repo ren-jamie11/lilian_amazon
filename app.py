@@ -14,7 +14,7 @@ from pandas.api.types import (
 
 # --- Streamlit Setup ---
 st.set_page_config(page_title="Amazon Sales Analysis", layout="wide")
-st.title("📈 Amazon 产品生命周期分析")
+st.header("📈 Amazon 产品生命周期分析")
 
 ITEM_COLS = ['ASIN', 'SKU', '品牌','URL', '商品主图', '所属类目', '商品标题', '上架时间']
 ITEM_COLS_NEW = ['ASIN', 'SKU', 'brand','url', 'image_path','category', 'product_title', 'listing_date']

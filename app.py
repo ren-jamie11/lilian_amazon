@@ -431,7 +431,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         # return empty DataFrame with same columns
         rival_asins = pd.DataFrame(columns=['ASIN', 'monthly_sales', 'url', 'product_title', 'listing_date'])
             
-    ST_COLS = ['ASIN', 'price', 'monthly_sales', 'listing_date','url']
+    ST_COLS = ['ASIN', 'brand','price', 'monthly_sales', 'listing_date','url']
             
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 

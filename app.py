@@ -325,8 +325,10 @@ def display_images(trimmed_df, n_display = 50):
                     
                     st.markdown(
                         f"""
+                        **ASIN:** {to_str(row.get("ASIN", []))}  
                         **Brand:** {to_str(row.get("brand", []))}  
                         **Listing date:** {to_str(row.get("listing_date", []))}  
+                        **Price:** {to_str(row.get("price", []))}  
                         **Monthly sales:** {listing_date}
                         """
                     )

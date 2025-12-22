@@ -431,7 +431,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 
-    st.write(trimmed_df, height=210)
+    st.dataframe(trimmed_df, height=210)
 
     display_images(trimmed_df)
 

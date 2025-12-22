@@ -38,11 +38,11 @@ if "csv_expander" not in st.session_state:
 def load_data():
     # if sales or price is none...return
     if sales_csv is None:
-         st.warning("Please upload sales csv")
+         st.warning("请上传 sales csv")
          return
         
     if prices_csv is None:
-         st.warning("Please upload prices csv")
+         st.warning("请上传 prices csv")
          return
     
     # load
@@ -90,7 +90,7 @@ def load_data():
 
     st.session_state['csv_expander'] = False
 
-with st.expander("Upload csvs", expanded=st.session_state['csv_expander']):
+with st.expander("上传 csv", expanded=st.session_state['csv_expander']):
     sales_csv = st.file_uploader("Sales (销量)", type="csv")
     prices_csv = st.file_uploader("Price (价格)", type="csv")
 

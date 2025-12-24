@@ -37,17 +37,24 @@ if "csv_expander" not in st.session_state:
 
 def load_data():
     # if sales or price is none...return
-    if sales_csv is None:
-         st.warning("请上传 sales csv")
-         return
+    # if sales_csv is None:
+    #      st.warning("请上传 sales csv")
+    #      return
         
-    if prices_csv is None:
-         st.warning("请上传 prices csv")
-         return
+    # if prices_csv is None:
+    #      st.warning("请上传 prices csv")
+    #      return
     
-    # load
-    sales = pd.read_csv(sales_csv)
-    prices = pd.read_csv(prices_csv)
+    # # load
+    # sales = pd.read_csv(sales_csv)
+    # prices = pd.read_csv(prices_csv)
+
+
+    sales = pd.read_excel(excel_file, sheet_name=0)   # First sheet
+    prices = pd.read_excel(excel_file, sheet_name=1)  # Second sheet
+
+    st.write(sales.columns)
+    st.write(prices.columns)
 
     # retrieve metadata df
     df = sales[ITEM_COLS]
@@ -90,13 +97,17 @@ def load_data():
 
     st.session_state['csv_expander'] = False
 
-with st.expander("上传 csv", expanded=st.session_state['csv_expander']):
-    sales_csv = st.file_uploader("Sales (销量)", type="csv")
-    prices_csv = st.file_uploader("Price (价格)", type="csv")
+with st.expander("上传 Excel", expanded=st.session_state['csv_expander']):
+    # sales_csv = st.file_uploader("Sales (销量)", type="csv")
+    # prices_csv = st.file_uploader("Price (价格)", type="csv")
 
-    load_data_button = st.button("Load data", 
-                                 key = "load_data_button",
-                                 on_click = load_data)
+    # load_data_button = st.button("Load data", 
+    #                              key = "load_data_button",
+    #                              on_click = load_data)
+    
+    
+    excel_file = st.file_uploader("上传 Excel", type="xlsx")
+    load_data_button = st.button("Load data", key="load_data_button", on_click=load_data)
 
 
 # --- Callbacks ---

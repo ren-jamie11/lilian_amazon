@@ -52,9 +52,6 @@ def load_data():
     sales = pd.read_excel(excel_file, sheet_name=0, engine = 'openpyxl')   # First sheet
     prices = pd.read_excel(excel_file, sheet_name=1, engine = 'openpyxl')  # Second sheet
 
-    st.write(sales.columns)
-    st.write(prices.columns)
-
     # retrieve metadata df
     df = sales[ITEM_COLS]
     df.columns = ITEM_COLS_NEW

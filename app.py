@@ -49,9 +49,8 @@ def load_data():
     # sales = pd.read_csv(sales_csv)
     # prices = pd.read_csv(prices_csv)
 
-
-    sales = pd.read_excel(excel_file, sheet_name=0)   # First sheet
-    prices = pd.read_excel(excel_file, sheet_name=1)  # Second sheet
+    sales = pd.read_excel(excel_file, sheet_name=0, engine = 'openpyxl')   # First sheet
+    prices = pd.read_excel(excel_file, sheet_name=1, engine = 'openpyxl')  # Second sheet
 
     st.write(sales.columns)
     st.write(prices.columns)

@@ -6,8 +6,8 @@ excel_file = st.file_uploader("Upload Excel workbook with Sales and Prices", typ
 
 def load_data():
     # Read both sheets into separate DataFrames
-    sales_df = pd.read_excel(excel_file, sheet_name=0)   # First sheet
-    prices_df = pd.read_excel(excel_file, sheet_name=1)  # Second sheet
+    sales_df = pd.read_excel(excel_file, sheet_name=0, engine = 'openpyxl')   # First sheet
+    prices_df = pd.read_excel(excel_file, sheet_name=1, engine = 'openpyxl')  # Second sheet
 
     st.write("Sales Data")
     st.dataframe(sales_df)

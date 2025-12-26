@@ -406,6 +406,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                 end_date=TODAY
             )
 
+        # Show pct changes
         st.dataframe(pct_changes)
             
     st.markdown("#### 竞争对手分析")

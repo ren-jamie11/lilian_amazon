@@ -12,14 +12,6 @@ from pandas.api.types import (
     is_object_dtype,
 )
 
-# --- Streamlit Setup ---
-st.set_page_config(page_title="Amazon Sales Analysis", layout="wide")
-st.header("📈 Amazon 产品生命周期分析")
-
-ITEM_COLS = ['ASIN', 'SKU', '品牌','URL', '商品主图', '所属类目', '商品标题', '上架时间']
-ITEM_COLS_NEW = ['ASIN', 'SKU', 'brand','url', 'image_path','category', 'product_title', 'listing_date']
-DISPLAY_COLS = ['ASIN', 'brand','url', 'image_path','product_title', 'listing_date']
-
 if 'sales' not in st.session_state:
     st.session_state['sales'] = None
 
@@ -32,23 +24,21 @@ if 'df' not in st.session_state:
 if 'summary' not in st.session_state:
     st.session_state['summary'] = None
 
+if 'pct_changes' not in st.session_state:
+    st.session_state['pct_changes'] = None
+
 if "csv_expander" not in st.session_state:
     st.session_state['csv_expander'] = True
 
-def load_data():
-    # if sales or price is none...return
-    # if sales_csv is None:
-    #      st.warning("请上传 sales csv")
-    #      return
-        
-    # if prices_csv is None:
-    #      st.warning("请上传 prices csv")
-    #      return
-    
-    # # load
-    # sales = pd.read_csv(sales_csv)
-    # prices = pd.read_csv(prices_csv)
+# --- Streamlit Setup ---
+st.set_page_config(page_title="Amazon Sales Analysis", layout="wide")
+st.header("📈 Amazon 产品生命周期分析")
 
+ITEM_COLS = ['ASIN', 'SKU', '品牌','URL', '商品主图', '所属类目', '商品标题', '上架时间']
+ITEM_COLS_NEW = ['ASIN', 'SKU', 'brand','url', 'image_path','category', 'product_title', 'listing_date']
+DISPLAY_COLS = ['ASIN', 'brand','url', 'image_path','product_title', 'listing_date']
+
+def load_data():
     sales = pd.read_excel(excel_file, sheet_name=0, engine = 'openpyxl')   # First sheet
     prices = pd.read_excel(excel_file, sheet_name=1, engine = 'openpyxl')  # Second sheet
 
@@ -85,23 +75,30 @@ def load_data():
     summary['total_sales_pct_change'] = summary['total_sales'].pct_change().round(2)
     summary['n_listings_pct_change'] = summary['n_listings'].pct_change().round(2)
 
+    # pct changes
+    summary['sales_growth_yoy'] = (
+    summary['total_sales'] / summary['total_sales'].shift(12) - 1
+    ).round(2)
+
+    summary['n_listings_growth_yoy'] = (
+        summary['n_listings'] / summary['n_listings'].shift(12) - 1
+    ).round(2)
+
+    pct_changes = summary[['month','sales_growth_yoy', 'n_listings_growth_yoy']]
+    pct_changes['month'] = pd.to_datetime(pct_changes['month']).dt.strftime('%Y-%m')
+    pct_changes = pct_changes.dropna()
+    pct_changes = pct_changes.set_index("month").T
+
     # store session state
     st.session_state['sales'] = sales
     st.session_state['prices'] = prices
     st.session_state["df"] = df
     st.session_state['summary'] = summary
+    st.session_state['pct_changes'] = pct_changes
 
     st.session_state['csv_expander'] = False
 
-with st.expander("上传 Excel", expanded=st.session_state['csv_expander']):
-    # sales_csv = st.file_uploader("Sales (销量)", type="csv")
-    # prices_csv = st.file_uploader("Price (价格)", type="csv")
-
-    # load_data_button = st.button("Load data", 
-    #                              key = "load_data_button",
-    #                              on_click = load_data)
-    
-    
+with st.expander("上传 Excel", expanded=st.session_state['csv_expander']):    
     excel_file = st.file_uploader("上传 Excel", type="xlsx")
     load_data_button = st.button("Load data", key="load_data_button", on_click=load_data)
 
@@ -356,6 +353,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     prices = st.session_state['prices']
     df = st.session_state["df"]
     summary = st.session_state['summary']
+    pct_changes = st.session_state['pct_changes']
 
     tabs = st.tabs(["单品", "总体"])
 
@@ -407,6 +405,8 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                 start_date='2022-01', 
                 end_date=TODAY
             )
+
+        st.dataframe(pct_changes)
             
     st.markdown("#### 竞争对手分析")
 

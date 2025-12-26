@@ -214,4 +214,23 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
 
 
-    # Time to show images!!!
+
+    # if sales or price is none...return
+    # if sales_csv is None:
+    #      st.warning("请上传 sales csv")
+    #      return
+        
+    # if prices_csv is None:
+    #      st.warning("请上传 prices csv")
+    #      return
+    
+    # # load
+    # sales = pd.read_csv(sales_csv)
+    # prices = pd.read_csv(prices_csv)
+
+        # sales_csv = st.file_uploader("Sales (销量)", type="csv")
+    # prices_csv = st.file_uploader("Price (价格)", type="csv")
+
+    # load_data_button = st.button("Load data", 
+    #                              key = "load_data_button",
+    #                              on_click = load_data)

@@ -430,7 +430,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
     # only calculate rival_asins if cutoff_qty is valid
     if isinstance(cutoff_qty, (int, float)):
-        rival_asins = asin_price_sales[asin_price_sales.monthly_sales > cutoff_qty * SALES_CUTOFF_MARGIN]
+        rival_asins = asin_price_sales[asin_price_sales.monthly_sales >= cutoff_qty * SALES_CUTOFF_MARGIN]
         rival_asins = rival_asins.merge(
             st.session_state['df'][DISPLAY_COLS], 
             on='ASIN'

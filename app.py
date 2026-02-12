@@ -294,7 +294,7 @@ def filter_dataframe(df: pd.DataFrame, filter_columns = []) -> pd.DataFrame:
     return df
 
 
-def display_images(trimmed_df, n_display = 9):
+def display_images(trimmed_df, n_display = 100):
         if len(trimmed_df) > n_display:
             trimmed_sample = trimmed_df.iloc[:n_display, :]
         else:
@@ -444,6 +444,13 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 
     st.dataframe(trimmed_df[ST_COLS])
+    
+    # DISTRIBUTION OF PRICE
+    avg_price = trimmed_df['price'].mean()
+    st.write(avg_price)
+
+
+    # plot_price_histogram(trimmed_df)
 
     display_images(trimmed_df)
 

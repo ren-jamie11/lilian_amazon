@@ -460,3 +460,50 @@ def get_fast_growing_asins(sales, asin_price_sales, growth_cutoff = 0.5, sales_c
     fast_growing_asins = fast_growing_asins.merge(pct_growths, on = 'ASIN', how = 'inner')
 
     return fast_growing_asins
+
+
+
+
+def plot_price_histogram(df):
+
+        prices = df['price'].dropna()
+
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+
+        # histogram
+        ax.hist(
+            prices,
+            bins=30,
+            edgecolor="white",
+            linewidth=1.2,
+            alpha=0.85
+        )
+
+        # titles
+        ax.set_title("Price Distribution", fontsize=16, pad=12, weight="bold")
+        ax.set_xlabel("Price ($)", fontsize=12)
+        ax.set_ylabel("Number of Products", fontsize=12)
+
+        # gridlines (the biggest visual improvement)
+        ax.grid(
+            axis="y",
+            linestyle="--",
+            linewidth=0.7,
+            alpha=0.6
+        )
+
+        # remove ugly top/right borders
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        # soften remaining borders
+        ax.spines["left"].set_alpha(0.3)
+        ax.spines["bottom"].set_alpha(0.3)
+
+        # nicer tick formatting
+        ax.tick_params(axis='both', labelsize=10)
+
+        # add padding
+        plt.tight_layout()
+
+        st.pyplot(fig, width = 1200)

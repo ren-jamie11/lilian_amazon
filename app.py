@@ -345,7 +345,7 @@ DATAFRAMES = ["sales", "prices", "df", "summary"]
 
 N_MONTHS = 3
 TODAY = get_today_yyyymm()
-SALES_CUTOFF_MARGIN = 0.75
+SALES_CUTOFF_MARGIN = 1
 GROWTH_CUTOFF = 0.5
 
 if all(st.session_state.get(k) is not None for k in DATAFRAMES):

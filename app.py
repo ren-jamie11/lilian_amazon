@@ -84,6 +84,8 @@ def load_data():
         summary['n_listings'] / summary['n_listings'].shift(12) - 1
     ).round(2)
 
+    summary['sales_per_listing'] = summary['total_sales'] / summary['n_listings']       
+
     pct_changes = summary[['month','sales_growth_yoy', 'n_listings_growth_yoy']]
     pct_changes['month'] = pd.to_datetime(pct_changes['month']).dt.strftime('%Y-%m')
     pct_changes = pct_changes.dropna()
@@ -386,11 +388,22 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         st.markdown("#### 总体分析")
 
         c3, c4 = st.columns([5,5])
+        st.write(st.session_state['summary'])
         with c3:
             plot_ts_two_cols(
                 st.session_state['summary'], 
                 'month', 
                 'wavg_price', 
+                'n_listings',
+                start_date='2022-01', 
+                end_date=TODAY
+            )
+
+            st.write('')
+            plot_ts_two_cols(
+                st.session_state['summary'], 
+                'month', 
+                'sales_per_listing', 
                 'n_listings',
                 start_date='2022-01', 
                 end_date=TODAY
@@ -415,7 +428,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     if our_asin in asin_price_sales.ASIN.values:
         # st.write(f"{our_asin} is in asin_price_sales")
         our_asin_qty = asin_price_sales[asin_price_sales.ASIN == our_asin].monthly_sales.values[0]
-    else:
+    else:   
         # st.write(f"{our_asin} is NOT in asin_price_sales")
         our_asin_qty = 0 
 
@@ -443,6 +456,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 
+    trimmed_df = trimmed_df.sort_values(by = 'monthly_sales', ascending = False )
     st.dataframe(trimmed_df[ST_COLS])
     
     # DISTRIBUTION OF PRICE

@@ -507,3 +507,4 @@ def plot_price_histogram(df):
         plt.tight_layout()
 
         st.pyplot(fig, width = 1200)
+

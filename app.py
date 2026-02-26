@@ -48,7 +48,26 @@ def load_data():
 
     # get listings with data
     df['listing_date'] = pd.to_datetime(df['listing_date'])
-    df = df[~df.listing_date.isna()]
+    date_columns = [col for col in sales.columns if isinstance(col, str) and len(col) == 7 and col[4] == '-']
+    def find_implied_listing_date(row):
+        for col in reversed(date_columns):  # Start from oldest date
+            value = row[col]
+            # Check if value is not NaN and is greater than 0
+            if pd.notna(value) and value > 0:
+                return col
+        return None  # If no valid date found
+
+    df['implied_listing_date'] = sales.apply(find_implied_listing_date, axis=1)
+
+    df['implied_listing_date'] = pd.to_datetime(
+        df['implied_listing_date'].apply(lambda x: f"{x}-01" if pd.notna(x) else None),
+        format='%Y-%m-%d',
+        errors='coerce'
+    )
+
+    df['listing_date'] = df['listing_date'].fillna(df['implied_listing_date'])
+    df = df.drop(columns='implied_listing_date')
+
     asins = df.ASIN.values.tolist()
 
     # get asin and month cols only
@@ -74,6 +93,12 @@ def load_data():
     summary = summarize_price_sales(sales, prices, df)
     summary['total_sales_pct_change'] = summary['total_sales'].pct_change().round(2)
     summary['n_listings_pct_change'] = summary['n_listings'].pct_change().round(2)
+
+    # # Inspect output so far
+    st.write(len(sales), len(prices))
+    # st.write(f'Prices: {len(prices)}')
+    # st.write(f'Sales: {len(sales)}')    
+    # st.write(f'Summary: {len(summary)}')
 
     # pct changes
     summary['sales_growth_yoy'] = (

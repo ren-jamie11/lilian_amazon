@@ -413,7 +413,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         st.markdown("#### 总体分析")
 
         c3, c4 = st.columns([5,5])
-        # st.write(st.session_state['summary'])
+        st.write(st.session_state['summary'])
         with c3:
             plot_ts_two_cols(
                 st.session_state['summary'], 

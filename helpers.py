@@ -217,7 +217,14 @@ def summarize_price_sales(sales, prices, df):
     summary = summary.reset_index()
     summary.columns = ['month','total_sales', 'wavg_price', 'n_listings']
 
+    summary['n_listings'] = summary['n_listings'].fillna(method='ffill')
     summary = summary.dropna()
+
+    # replace price outlier
+    summary['wavg_price'] = summary['wavg_price'].mask(
+        (summary['wavg_price'] < (summary['wavg_price'].quantile(0.25) - 5 * (summary['wavg_price'].quantile(0.75) - summary['wavg_price'].quantile(0.25)))) |
+        (summary['wavg_price'] > (summary['wavg_price'].quantile(0.75) + 5 * (summary['wavg_price'].quantile(0.75) - summary['wavg_price'].quantile(0.25))))
+    ).ffill()
 
     return summary.sort_values(by = 'month').round(2)
 

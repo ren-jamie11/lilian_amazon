@@ -387,15 +387,23 @@ def plot_ts_two_cols(
     ax1.set_xlabel(date_col)
     ax1.set_ylabel(value_col1, color='blue')
     ax1.tick_params(axis='y', labelcolor='blue')
-    ax1.grid(True, alpha=0.3)
-
+    
     # Draw horizontal line if line_value is supplied
     if line_value is not None:
         ax1.axhline(y=line_value, color='green', linestyle='--', label=f'our price')
 
     # --- X-AXIS FORMATTING ---
+    # Major ticks every 3 months (with labels)
     ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    
+    # Minor ticks every month (for gridlines, no labels)
+    ax1.xaxis.set_minor_locator(mdates.MonthLocator(interval=1))
+    
+    # Enable grid for both major and minor ticks
+    ax1.grid(True, which='major', alpha=0.5, linestyle='-')
+    ax1.grid(True, which='minor', alpha=0.4, linestyle=':')
+    
     plt.xticks(rotation=45)
 
     # Plot second value column on right y-axis

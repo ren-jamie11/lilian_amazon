@@ -88,7 +88,7 @@ def load_data():
     month_cols = [c for c in merged.columns if c not in ['ASIN', 'qty']]
     merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
     prices = merged.drop(columns=['qty'])
-
+    
     # summary
     summary = summarize_price_sales(sales, prices, df)
     summary['total_sales_pct_change'] = summary['total_sales'].pct_change().round(2)
@@ -413,7 +413,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         st.markdown("#### 总体分析")
 
         c3, c4 = st.columns([5,5])
-        st.write(st.session_state['summary'])
+        # st.write(st.session_state['summary'])
         with c3:
             plot_ts_two_cols(
                 st.session_state['summary'], 

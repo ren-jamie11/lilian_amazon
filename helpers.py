@@ -231,22 +231,171 @@ def summarize_price_sales(sales, prices, df):
 
 # Plots
 
+# @st.cache_data
+# def plot_sales_timeseries(
+#     df,
+#     asin_list=None,
+#     my_asin=None,
+#     asin_col='ASIN'
+# ):
+#     """
+#     df: sales df in wide format (ASIN + month columns with numeric values)
+#     asin_list: list of ASINs to plot (default = all)
+#     my_asin: your ASIN to highlight in different color
+#     asin_col: name of the ASIN column
+#     """
+    
+#     # Identify month columns: anything except ASIN col
+#     month_cols = [c for c in df.columns if c != asin_col]
+    
+#     # If asin_list not supplied, use all ASINs
+#     if asin_list is None:
+#         asin_list = df[asin_col].tolist()
+    
+#     # Filter df by the ASIN list
+#     sub = df[df[asin_col].isin(asin_list)].copy()
+    
+#     # Melt to long format
+#     long = sub.melt(
+#         id_vars=[asin_col],
+#         value_vars=month_cols,
+#         var_name='month',
+#         value_name='sales'
+#     )
+    
+#     # Convert the month col to datetime for proper plotting
+#     long['month'] = pd.to_datetime(long['month'])
+    
+#     # --- Build Matplotlib fig for Streamlit ---
+#     fig, ax = plt.subplots(figsize=(12, 6))
+    
+#     # Plot each ASIN
+#     for asin in asin_list:
+#         asin_data = long[long[asin_col] == asin]
+        
+#         # Highlight my ASIN in orange
+#         if asin == my_asin:
+#             ax.plot(
+#                 asin_data['month'],
+#                 asin_data['sales'],
+#                 linewidth=3,
+#                 label=f"{asin} (me)"
+#             )
+#         else:
+#             ax.plot(
+#                 asin_data['month'],
+#                 asin_data['sales'],
+#                 alpha=0.5
+#             )
+    
+#     ax.set_xlabel("Month")
+#     ax.set_ylabel("Sales")
+#     ax.set_title("ASIN Sales Over Time")
+    
+#     if my_asin in asin_list:
+#         ax.legend()
+    
+#     ax.grid(True, alpha=0.3)
+#     fig.tight_layout()
+    
+#     # Render via Streamlit
+#     st.pyplot(fig)
+
+# @st.cache_data
+# def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_asin=None):
+#     """
+#     Scatter plot of price vs total sales for the last n_months.
+
+#     - Total sales are summed over the last n_months.
+#     - Price is taken from the most recent month.
+#     - our_asin (if supplied) is highlighted in red.
+#     Each point represents an ASIN.
+#     """
+#     # Identify month columns sorted ascending
+#     month_cols = [c for c in prices_df.columns if c != asin_col]
+#     month_cols = sorted(month_cols)
+    
+#     if n_months > len(month_cols):
+#         raise ValueError(f"n_months={n_months} is larger than available months={len(month_cols)}")
+    
+#     # Last n_months
+#     months_to_sum = month_cols[-n_months:]
+#     most_recent_month = month_cols[-1]
+
+#     # Check all months exist in both dfs
+#     for df_name, df in [('prices_df', prices_df), ('sales_df', sales_df)]:
+#         missing = [m for m in months_to_sum if m not in df.columns]
+#         if missing:
+#             raise ValueError(f"{df_name} is missing months: {missing}")
+
+#     # Sum sales over last n_months
+#     sales_sum = sales_df[[asin_col] + months_to_sum].copy()
+#     sales_sum['total_sales'] = sales_sum[months_to_sum].sum(axis=1)
+
+#     # Price from most recent month
+#     prices_end = prices_df[[asin_col, most_recent_month]].copy()
+#     prices_end = prices_end.rename(columns={most_recent_month: 'price'})
+
+#     # Merge
+#     merged = pd.merge(prices_end, sales_sum[[asin_col, 'total_sales']], on=asin_col)
+
+#     # Drop rows with missing or zero values
+#     merged = merged.dropna(subset=['price', 'total_sales'])
+#     merged = merged[(merged['price'] != 0) & (merged['total_sales'] != 0)]
+#     merged['monthly_sales'] = merged['total_sales']/n_months
+    
+#     # --- Plot for Streamlit ---
+#     fig, ax = plt.subplots(figsize=(8, 6))
+
+#     # Plot all ASINs in blue
+#     others = merged[merged[asin_col] != our_asin]
+#     ax.scatter(others['price'], others['monthly_sales'], alpha=0.7, label='Other ASINs')
+
+#     # Highlight our_asin in red if supplied
+#     if our_asin is not None and our_asin in merged[asin_col].values:
+#         ours = merged[merged[asin_col] == our_asin]
+#         ax.scatter(ours['price'], ours['monthly_sales'], color='red', label=f"Our ASIN: {our_asin}")
+
+#     ax.set_xlabel(f"Price ({most_recent_month})")
+#     ax.set_ylabel(f"Total Sales (last {n_months} months)")
+#     ax.set_title(f"Price vs Avg Monthly Sales — last {n_months} months")
+#     ax.legend()
+#     ax.grid(True)
+
+#     # Render plot in Streamlit
+#     st.pyplot(fig)
+
+#     return merged.round(2)
+
 @st.cache_data
 def plot_sales_timeseries(
     df,
     asin_list=None,
-    my_asin=None,
-    asin_col='ASIN'
+    my_asins=None,
+    asin_col='ASIN',
+    start_date='2024-01-01',
+    top_n=3
 ):
     """
     df: sales df in wide format (ASIN + month columns with numeric values)
     asin_list: list of ASINs to plot (default = all)
-    my_asin: your ASIN to highlight in different color
+    my_asins: list of ASINs to highlight in different color
     asin_col: name of the ASIN column
+    start_date: earliest date to display (default '2024-01-01')
+    top_n: number of top ASINs to highlight (default 3)
     """
     
     # Identify month columns: anything except ASIN col
     month_cols = [c for c in df.columns if c != asin_col]
+    
+    # Convert start_date to datetime
+    start_dt = pd.to_datetime(start_date)
+    
+    # Filter month columns to only those >= start_date
+    month_cols_filtered = [
+        c for c in month_cols 
+        if pd.to_datetime(c) >= start_dt
+    ]
     
     # If asin_list not supplied, use all ASINs
     if asin_list is None:
@@ -255,10 +404,18 @@ def plot_sales_timeseries(
     # Filter df by the ASIN list
     sub = df[df[asin_col].isin(asin_list)].copy()
     
-    # Melt to long format
+    # Get the most recent month column (last in filtered list)
+    most_recent_month = month_cols_filtered[-1]
+    
+    # Find top N ASINs by most recent sales
+    top_asins = (
+        sub.nlargest(top_n, most_recent_month)[asin_col].tolist()
+    )
+    
+    # Melt to long format using only filtered month columns
     long = sub.melt(
         id_vars=[asin_col],
-        value_vars=month_cols,
+        value_vars=month_cols_filtered,
         var_name='month',
         value_name='sales'
     )
@@ -273,27 +430,32 @@ def plot_sales_timeseries(
     for asin in asin_list:
         asin_data = long[long[asin_col] == asin]
         
-        # Highlight my ASIN in orange
-        if asin == my_asin:
+        # Highlight top N ASINs in softer red with moderate lines
+        if asin in top_asins:
             ax.plot(
                 asin_data['month'],
                 asin_data['sales'],
-                linewidth=3,
-                label=f"{asin} (me)"
+                color='#D9534F',  # Softer red color
+                linewidth=2,
+                alpha=0.8,
+                label=f"{asin}"
             )
         else:
             ax.plot(
                 asin_data['month'],
                 asin_data['sales'],
-                alpha=0.5
+                color='gray',
+                alpha=0.3,
+                linewidth=1
             )
     
     ax.set_xlabel("Month")
     ax.set_ylabel("Sales")
     ax.set_title("ASIN Sales Over Time")
     
-    if my_asin in asin_list:
-        ax.legend()
+    # Show legend only for top ASINs, positioned at top right
+    if top_asins:
+        ax.legend(loc='upper right')
     
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
@@ -302,13 +464,119 @@ def plot_sales_timeseries(
     st.pyplot(fig)
 
 @st.cache_data
-def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_asin=None):
+def plot_sales_timeseries(
+    df,
+    asin_list=None,
+    my_asins=None,
+    asin_col='ASIN',
+    start_date='2024-01-01',
+    top_n=3
+):
+    """
+    df: sales df in wide format (ASIN + month columns with numeric values)
+    asin_list: list of ASINs to plot (default = all)
+    my_asins: list of ASINs to highlight in different color
+    asin_col: name of the ASIN column
+    start_date: earliest date to display (default '2024-01-01')
+    top_n: number of top ASINs to highlight (default 3)
+    """
+    
+    # Identify month columns: anything except ASIN col
+    month_cols = [c for c in df.columns if c != asin_col]
+    
+    # Convert start_date to datetime
+    start_dt = pd.to_datetime(start_date)
+    
+    # Filter month columns to only those >= start_date
+    month_cols_filtered = [
+        c for c in month_cols 
+        if pd.to_datetime(c) >= start_dt
+    ]
+    
+    # If asin_list not supplied, use all ASINs
+    if asin_list is None:
+        asin_list = df[asin_col].tolist()
+    
+    # Filter df by the ASIN list
+    sub = df[df[asin_col].isin(asin_list)].copy()
+    
+    # Convert my_asins to list if needed, handle None
+    if my_asins is None:
+        my_asins = []
+    elif isinstance(my_asins, str):
+        my_asins = [my_asins]
+    
+    # Get the most recent month column (last in filtered list)
+    most_recent_month = month_cols_filtered[-1]
+    
+    # Find top N ASINs within my_asins by most recent sales
+    top_asins = []
+    if my_asins:
+        my_asins_df = sub[sub[asin_col].isin(my_asins)]
+        top_asins = (
+            my_asins_df.nlargest(top_n, most_recent_month)[asin_col].tolist()
+        )
+    
+    # Melt to long format using only filtered month columns
+    long = sub.melt(
+        id_vars=[asin_col],
+        value_vars=month_cols_filtered,
+        var_name='month',
+        value_name='sales'
+    )
+    
+    # Convert the month col to datetime for proper plotting
+    long['month'] = pd.to_datetime(long['month'])
+    
+    # --- Build Matplotlib fig for Streamlit ---
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Plot each ASIN
+    for asin in asin_list:
+        asin_data = long[long[asin_col] == asin]
+        
+        # Highlight top N ASINs within my_asins in softer red with moderate lines
+        if asin in top_asins:
+            ax.plot(
+                asin_data['month'],
+                asin_data['sales'],
+                color='#D9534F',  # Softer red color
+                linewidth=2,
+                alpha=0.8,
+                label=f"{asin}"
+            )
+        else:
+            ax.plot(
+                asin_data['month'],
+                asin_data['sales'],
+                color='gray',
+                alpha=0.3,
+                linewidth=1
+            )
+    
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Sales")
+    ax.set_title("ASIN Sales Over Time")
+    
+    # Show legend only for top ASINs, positioned at top right
+    if top_asins:
+        ax.legend(loc='upper right')
+    
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    
+    # Render via Streamlit
+    st.pyplot(fig)
+
+@st.cache_data
+def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_asins=None, top_n=3):
     """
     Scatter plot of price vs total sales for the last n_months.
 
     - Total sales are summed over the last n_months.
     - Price is taken from the most recent month.
-    - our_asin (if supplied) is highlighted in red.
+    - our_asins (if supplied) is a list of ASINs to highlight in red.
+    - top_n: number of highest-selling highlighted ASINs to annotate (default 3)
     Each point represents an ASIN.
     """
     # Identify month columns sorted ascending
@@ -347,14 +615,37 @@ def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_a
     # --- Plot for Streamlit ---
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    # Plot all ASINs in blue
-    others = merged[merged[asin_col] != our_asin]
+    # Convert our_asins to list if needed, handle None
+    if our_asins is None:
+        our_asins = []
+    elif isinstance(our_asins, str):
+        our_asins = [our_asins]
+    
+    # Plot all ASINs not in our_asins in blue
+    others = merged[~merged[asin_col].isin(our_asins)]
     ax.scatter(others['price'], others['monthly_sales'], alpha=0.7, label='Other ASINs')
 
-    # Highlight our_asin in red if supplied
-    if our_asin is not None and our_asin in merged[asin_col].values:
-        ours = merged[merged[asin_col] == our_asin]
-        ax.scatter(ours['price'], ours['monthly_sales'], color='red', label=f"Our ASIN: {our_asin}")
+    # Highlight our_asins in red
+    if our_asins:
+        ours = merged[merged[asin_col].isin(our_asins)]
+        if not ours.empty:
+            ax.scatter(ours['price'], ours['monthly_sales'], color='red', 
+                      label=f"Our ASINs ({len(ours)})")
+            
+            # Get top N highest-selling highlighted ASINs
+            top_ours = ours.nlargest(top_n, 'monthly_sales')
+            
+            # Annotate only the top N
+            for _, row in top_ours.iterrows():
+                ax.annotate(
+                    f"{int(row['monthly_sales'])}",
+                    xy=(row['price'], row['monthly_sales']),
+                    xytext=(5, 5),  # offset 5 points right and up
+                    textcoords='offset points',
+                    fontsize=9,
+                    color='red',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='red', alpha=0.7)
+                )
 
     ax.set_xlabel(f"Price ({most_recent_month})")
     ax.set_ylabel(f"Total Sales (last {n_months} months)")
@@ -366,7 +657,6 @@ def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_a
     st.pyplot(fig)
 
     return merged.round(2)
-
 
 @st.cache_data
 def plot_ts_two_cols(
@@ -428,8 +718,6 @@ def plot_ts_two_cols(
     plt.tight_layout()
     
     st.pyplot(fig)
-
-
 
 
 # Get rising competitors

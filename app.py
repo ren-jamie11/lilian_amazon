@@ -95,7 +95,7 @@ def load_data():
     summary['n_listings_pct_change'] = summary['n_listings'].pct_change().round(2)
 
     # # Inspect output so far
-    st.write(len(sales), len(prices))
+    # st.write(len(sales), len(prices))
     # st.write(f'Prices: {len(prices)}')
     # st.write(f'Sales: {len(sales)}')    
     # st.write(f'Summary: {len(summary)}')

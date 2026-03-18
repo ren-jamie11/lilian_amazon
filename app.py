@@ -85,8 +85,8 @@ def load_data():
     # qty
     df['qty'] = df['product_title'].apply(extract_qty)  
     merged = prices.merge(df[['ASIN', 'qty']], on='ASIN', how='left')
-    month_cols = [c for c in merged.columns if c not in ['ASIN', 'qty']]
-    merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
+    # month_cols = [c for c in merged.columns if c not in ['ASIN', 'qty']]
+    # merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
     prices = merged.drop(columns=['qty'])
     
     # summary

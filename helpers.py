@@ -217,7 +217,8 @@ def summarize_price_sales(sales, prices, df):
     summary = summary.reset_index()
     summary.columns = ['month','total_sales', 'wavg_price', 'n_listings']
 
-    summary['n_listings'] = summary['n_listings'].fillna(method='ffill')
+    # summary['n_listings'] = summary['n_listings'].fillna(method='ffill')
+    summary['n_listings'] = summary['n_listings'].ffill()
     summary = summary.dropna()
 
     # replace price outlier

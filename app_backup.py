@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from helpers import *
+from helpers_backup import *
 
 import numpy as np
 from PIL import UnidentifiedImageError
@@ -85,8 +85,8 @@ def load_data():
     # qty
     df['qty'] = df['product_title'].apply(extract_qty)  
     merged = prices.merge(df[['ASIN', 'qty']], on='ASIN', how='left')
-    month_cols = [c for c in merged.columns if c not in ['ASIN', 'qty']]
-    merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
+    # month_cols = [c for c in merged.columns if c not in ['ASIN', 'qty']]
+    # merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
     prices = merged.drop(columns=['qty'])
     
     # summary
@@ -95,7 +95,7 @@ def load_data():
     summary['n_listings_pct_change'] = summary['n_listings'].pct_change().round(2)
 
     # # Inspect output so far
-    st.write(len(sales), len(prices))
+    # st.write(len(sales), len(prices))
     # st.write(f'Prices: {len(prices)}')
     # st.write(f'Sales: {len(sales)}')    
     # st.write(f'Summary: {len(summary)}')
@@ -369,7 +369,7 @@ def display_images(trimmed_df, n_display = 100):
 
 
 DATAFRAMES = ["sales", "prices", "df", "summary"]
-OUR_BRANDS = ['briful', 'Hollyone', 'Dilatata']
+OUR_BRANDS = ['briful', 'Hollyone', 'Dilatata','Villa Como', 'Arborus', 'Oairse', 'Nature Crafted']
 
 N_MONTHS = 3
 TODAY = get_today_yyyymm()
@@ -382,8 +382,11 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     df = st.session_state["df"]
     summary = st.session_state['summary']
     pct_changes = st.session_state['pct_changes']
-
+    
     OUR_BRAND_ASINS = df[df.brand.str.lower().isin([b.lower() for b in OUR_BRANDS])].ASIN.values.tolist()
+    st.write(summary)
+    st.write(df)
+
     tabs = st.tabs(["单品", "总体"])
 
     with tabs[0]:  # Micro tab
@@ -400,7 +403,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         c1, c2 = st.columns([6,4])
         with c1:
             # Sales timeseries for a single ASIN
-            plot_sales_timeseries(st.session_state['sales'], my_asin=st.session_state['our_asin'])
+            plot_sales_timeseries(st.session_state['sales'], my_asins=OUR_BRAND_ASINS)
         
         with c2:
             # Scatter of price vs total sales
@@ -408,7 +411,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                 st.session_state['prices'], 
                 st.session_state['sales'], 
                 n_months=N_MONTHS, 
-                our_asin=st.session_state['our_asin']
+                our_asins=OUR_BRAND_ASINS
             )
 
     with tabs[1]:  # Macro tab
@@ -451,15 +454,15 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             
     st.markdown("#### 竞争对手分析")
 
-    # get cutoff qty for our asin
-    if our_asin in asin_price_sales.ASIN.values:
-        # st.write(f"{our_asin} is in asin_price_sales")
-        our_asin_qty = asin_price_sales[asin_price_sales.ASIN == our_asin].monthly_sales.values[0]
-    else:   
-        # st.write(f"{our_asin} is NOT in asin_price_sales")
-        our_asin_qty = 0 
+    # # get cutoff qty for our asin
+    # if our_asin in asin_price_sales.ASIN.values:
+    #     # st.write(f"{our_asin} is in asin_price_sales")
+    #     our_asin_qty = asin_price_sales[asin_price_sales.ASIN == our_asin].monthly_sales.values[0]
+    # else:   
+    #     # st.write(f"{our_asin} is NOT in asin_price_sales")
+    #     our_asin_qty = 0 
 
-    cutoff_qty_input = st.text_input("最少平均月销量", value=int(our_asin_qty * SALES_CUTOFF_MARGIN), width = 150)
+    cutoff_qty_input = st.text_input("最少平均月销量", value=0, width = 150)
 
     # validate input
     try:
@@ -488,7 +491,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     
     # DISTRIBUTION OF PRICE
     avg_price = trimmed_df['price'].mean()
-    st.write(avg_price)
+    # st.write(avg_price)
 
 
     # plot_price_histogram(trimmed_df)

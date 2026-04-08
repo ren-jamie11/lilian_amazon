@@ -587,7 +587,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
 
         # Show pct changes
-            st.session_state['cohort_summary']
+            # st.session_state['cohort_summary']
         # st.dataframe(pct_changes)
             
     st.markdown("#### 竞争对手分析")

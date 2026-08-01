@@ -863,6 +863,52 @@ def format_usd_compact(value):
     return f"{sign}${magnitude:,.0f}"
 
 
+def yoy_period_growth(monthly, n_months):
+    """Year-over-year growth for the last `n_months` of a monthly series.
+
+    `monthly` is a Series indexed by month-start datetimes, ascending — i.e.
+    what get_monthly_sales returns. The prior window is looked up by *date*
+    (each month minus 12), not by position, so a workbook with a missing month
+    returns None rather than silently comparing against the wrong month.
+
+    Returns None if the comparison isn't possible, else a dict with
+    current / prior / growth / window / prior_window. `growth` is None when the
+    prior window sums to zero — the raw numbers are still worth showing.
+    """
+    if monthly is None or len(monthly) < n_months:
+        return None
+
+    current_months = list(monthly.index[-n_months:])
+    prior_months = [m - pd.DateOffset(months=12) for m in current_months]
+    if any(m not in monthly.index for m in prior_months):
+        return None
+
+    current = float(monthly.loc[current_months].sum())
+    prior = float(monthly.loc[prior_months].sum())
+
+    return {
+        'current': current,
+        'prior': prior,
+        'growth': (current / prior - 1) if prior > 0 else None,
+        'window': (current_months[0], current_months[-1]),
+        'prior_window': (prior_months[0], prior_months[-1]),
+    }
+
+
+def format_growth_pct(growth):
+    """Format a growth fraction: +18%, +4.2%, +2,699% (×28.0), or —."""
+    if growth is None:
+        return "—"
+
+    pct = growth * 100
+    # one decimal for small moves so they don't all round to +0%
+    text = f"{pct:+,.1f}%" if abs(pct) < 10 else f"{pct:+,.0f}%"
+    if growth >= 2.0:
+        text += f" (×{growth + 1:.1f})"
+
+    return text
+
+
 def assign_cohort(listing_dates):
     """Bucket listing dates into COHORT_LABELS; NaT -> COHORT_UNKNOWN."""
     dates = pd.to_datetime(listing_dates, errors='coerce')

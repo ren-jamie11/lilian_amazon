@@ -656,24 +656,47 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                         end_date=TODAY
                     )
                 
-            # fig, ax = plt.subplots(figsize=(6, 4))
-            # df_cohort_summary = st.session_state['cohort_summary']
+            st.write('')
+            st.markdown("#### 市场增速")
 
-            # bars = ax.bar(df_cohort_summary['组'], df_cohort_summary['平均月销量'], color=['#4C72B0', '#DD8452', '#55A868'])
-            # ax.bar_label(bars, fmt='%d')
-            # ax.set_xlabel('Cohort')
-            # ax.set_ylabel('')
-            # ax.set_title('Avg monthly sales by listing date')
+            st.write("")
+            monthly_sales = get_monthly_sales(sales)
+            yoy_rows = []
+            for label, n in [('最新月', 1), ('最近3个月', 3), ('最近12个月', 12)]:
+                period = yoy_period_growth(monthly_sales, n)
+                if period is None:
+                    continue
+                start, end = period['window']
+                if n == 1:
+                    window = start.strftime('%Y-%m')
+                elif start.year == end.year:
+                    window = f"{start:%Y-%m}~{end:%m}"
+                else:
+                    window = f"{start:%Y-%m}~{end:%Y-%m}"
+                yoy_rows.append({
+                    '期间': f"{label} {window}",
+                    '本期': int(round(period['current'])),
+                    '去年同期': int(round(period['prior'])),
+                    '同比': format_growth_pct(period['growth']),
+                })
 
-            # st.pyplot(fig)
+            if yoy_rows:
+                st.dataframe(
+                    pd.DataFrame(yoy_rows),
+                    hide_index=True,
+                    width='stretch',
+                    column_config={
+                        '本期': st.column_config.NumberColumn(format="localized"),
+                        '去年同期': st.column_config.NumberColumn(format="localized"),
+                    },
+                )
+                
+            else:
+                st.caption("数据不足，无法计算同比（需至少13个月）")
 
-
-        # Show pct changes
-            # st.session_state['cohort_summary']
-        # st.dataframe(pct_changes)
 
     with tabs[2]:  # Market share / concentration tab
-        st.markdown("#### 市场份额")
+        st.markdown("#### 市场份额 (最近3月)")
 
         recent, recent_months = get_recent_sales(sales, n_months=N_MONTHS)
         revenue, _ = get_recent_revenue(sales, prices, n_months=N_MONTHS)
@@ -823,7 +846,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     filter_columns = ['ASIN', 'brand', 'price'] 
     trimmed_df = filter_dataframe(rival_asins, filter_columns) 
     trimmed_df = trimmed_df.sort_values(by = 'monthly_sales', ascending = False )
-    st.dataframe(trimmed_df[ST_COLS])
+    # st.dataframe(trimmed_df[ST_COLS])
     
     # DISTRIBUTION OF PRICE
     avg_price = trimmed_df['price'].mean()

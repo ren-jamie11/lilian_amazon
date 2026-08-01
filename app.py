@@ -657,41 +657,45 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                     )
                 
             st.write('')
-            st.markdown("#### 市场增速")
 
-            st.write("")
-            monthly_sales = get_monthly_sales(sales)
-            yoy_rows = []
-            for label, n in [('最新月', 1), ('最近3个月', 3), ('最近12个月', 12)]:
-                period = yoy_period_growth(monthly_sales, n)
-                if period is None:
-                    continue
-                start, end = period['window']
-                if n == 1:
-                    window = start.strftime('%Y-%m')
-                elif start.year == end.year:
-                    window = f"{start:%Y-%m}~{end:%m}"
-                else:
-                    window = f"{start:%Y-%m}~{end:%Y-%m}"
-                yoy_rows.append({
-                    '期间': f"{label} {window}",
-                    '本期': int(round(period['current'])),
-                    '去年同期': int(round(period['prior'])),
-                    '同比': format_growth_pct(period['growth']),
-                })
+            def build_yoy_rows(monthly, format_value):
+                """One row per horizon; skips horizons the data can't support."""
+                rows = []
+                for label, n in [('最新月', 1), ('最近3个月', 3), ('最近12个月', 12)]:
+                    period = yoy_period_growth(monthly, n)
+                    if period is None:
+                        continue
+                    start, end = period['window']
+                    if n == 1:
+                        window = start.strftime('%Y-%m')
+                    elif start.year == end.year:
+                        window = f"{start:%Y-%m}~{end:%m}"
+                    else:
+                        window = f"{start:%Y-%m}~{end:%Y-%m}"
+                    rows.append({
+                        '期间': f"{label} {window}",
+                        '本期': format_value(period['current']),
+                        '去年同期': format_value(period['prior']),
+                        '同比': format_growth_pct(period['growth']),
+                    })
+                return rows
 
-            if yoy_rows:
-                st.dataframe(
-                    pd.DataFrame(yoy_rows),
-                    hide_index=True,
-                    width='stretch',
-                    column_config={
-                        '本期': st.column_config.NumberColumn(format="localized"),
-                        '去年同期': st.column_config.NumberColumn(format="localized"),
-                    },
-                )
-                
+            sales_rows = build_yoy_rows(get_monthly_sales(sales), lambda v: f"{v:,.0f}")
+            revenue_rows = build_yoy_rows(
+                get_monthly_revenue(sales, prices), format_usd_compact
+            )
+
+            if sales_rows or revenue_rows:
+                st.markdown("#### 市场增速（销量）")
+                st.dataframe(pd.DataFrame(sales_rows), hide_index=True, width='stretch')
+
+                st.write('')
+                st.markdown("#### 市场增速（销售额）")
+                st.dataframe(pd.DataFrame(revenue_rows), hide_index=True, width='stretch')
+
+                st.caption("与去年同期对比（全市场，不受上方 Cohort 影响）")
             else:
+                st.markdown("#### 市场增速")
                 st.caption("数据不足，无法计算同比（需至少13个月）")
 
 

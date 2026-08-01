@@ -811,13 +811,48 @@ def get_recent_sales(sales_df, n_months=3, asin_col='ASIN'):
     return recent, months
 
 
+def backfill_prices(prices_df, asin_col='ASIN'):
+    """Fill price gaps per ASIN so revenue isn't understated by missing prices.
+
+    0 and NaN both count as missing. Across the month columns, ascending:
+      - interior gap (known on both sides) -> mean of the two bracketing values,
+        so 5, na, na, 10 becomes 5, 7.5, 7.5, 10 (every gap month gets the same
+        midpoint — deliberately not a linear interpolation)
+      - trailing gap -> last known value
+      - leading gap  -> first known value
+      - no price in any month -> left at 0, contributing no revenue
+
+    Sales are never backfilled — only prices.
+    """
+    months = sorted([c for c in prices_df.columns if c != asin_col])
+    if not months:
+        return prices_df.copy()
+
+    out = prices_df.copy()
+    known = out[months].mask(out[months] <= 0)
+
+    prev = known.ffill(axis=1)   # last known value at or before each month
+    nxt = known.bfill(axis=1)    # next known value at or after each month
+
+    filled = (
+        known
+        .fillna((prev + nxt) / 2)  # interior gaps: bracketing midpoint
+        .fillna(prev)              # trailing gaps: carry the last known forward
+        .fillna(nxt)               # leading gaps: carry the first known back
+        .fillna(0.0)               # ASIN with no price at all
+    )
+    out[months] = filled
+
+    return out
+
+
 def get_recent_revenue(sales_df, prices_df, n_months=3, asin_col='ASIN'):
     """Per-ASIN revenue over the last n_months: sum of units[m] * price[m].
 
-    Strict sumproduct — a month with units sold but no price contributes 0
-    rather than being estimated, so the total always traces back to the sheet.
-    Prices here are listing prices (the per-unit qty division in load_data is
-    commented out), so this is GMV per listing.
+    Prices are gap-filled by backfill_prices first, so a month with units sold
+    but no recorded price still contributes. Prices here are listing prices
+    (the per-unit qty division in load_data is commented out), so this is GMV
+    per listing.
 
     Returns (DataFrame[ASIN, recent_revenue], months_used).
     """
@@ -827,7 +862,9 @@ def get_recent_revenue(sales_df, prices_df, n_months=3, asin_col='ASIN'):
         return pd.DataFrame(columns=[asin_col, 'recent_revenue']), []
 
     units = sales_df[[asin_col] + months].groupby(asin_col, as_index=False).sum()
-    price = prices_df[[asin_col] + months].drop_duplicates(subset=asin_col)
+    # backfill across ALL months, then slice — a gap must see its neighbours
+    price = backfill_prices(prices_df, asin_col)
+    price = price[[asin_col] + months].drop_duplicates(subset=asin_col)
 
     # merge on ASIN — the two sheets are not guaranteed to be row-aligned
     merged = units.merge(price, on=asin_col, how='left', suffixes=('_units', '_price'))
@@ -837,6 +874,36 @@ def get_recent_revenue(sales_df, prices_df, n_months=3, asin_col='ASIN'):
         revenue = revenue + merged[f'{m}_units'] * merged[f'{m}_price'].fillna(0)
 
     return merged[[asin_col]].assign(recent_revenue=revenue), months
+
+
+def get_monthly_revenue(sales_df, prices_df, asin_col='ASIN'):
+    """Total revenue per month across all ASINs.
+
+    The revenue analogue of get_monthly_sales — returns a Series indexed by
+    month-start datetime, so it drops straight into yoy_period_growth.
+    """
+    months = sorted(
+        set(c for c in sales_df.columns if c != asin_col)
+        & set(c for c in prices_df.columns if c != asin_col)
+    )
+    if not months:
+        return pd.Series(dtype=float, name='total_revenue')
+
+    units = sales_df[[asin_col] + months].groupby(asin_col, as_index=False).sum()
+    price = backfill_prices(prices_df, asin_col)
+    price = price[[asin_col] + months].drop_duplicates(subset=asin_col)
+
+    merged = units.merge(price, on=asin_col, how='left', suffixes=('_units', '_price'))
+
+    revenue = {
+        m: float((merged[f'{m}_units'] * merged[f'{m}_price'].fillna(0)).sum())
+        for m in months
+    }
+
+    out = pd.Series(revenue, name='total_revenue')
+    out.index = pd.to_datetime(out.index)
+
+    return out.sort_index()
 
 
 # (divisor, suffix, decimals) largest first

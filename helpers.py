@@ -765,3 +765,198 @@ def plot_price_histogram(df):
 
         st.pyplot(fig, width = 1200)
 
+
+# --- Market share / concentration -------------------------------------------
+
+COHORT_LABELS = ['2023及以前', '2024-2025', '2026及以后']
+COHORT_UNKNOWN = '未知'
+BRAND_UNKNOWN = '未知'
+
+# rank 1 -> 5, anchored on the accent blue used elsewhere in the app.
+# Kept light enough that the dark in-segment label stays legible on rank 1.
+SHARE_PALETTE = ['#6E9EDD', '#8CB1E4', '#A8C3EB', '#C3D5F2', '#DDE7F9']
+SHARE_OTHER_COLOR = '#9CA3AF'
+SHARE_OTHER_FILL = '#E5E7EB'
+
+# a segment narrower than this can't fit readable text
+IN_BAR_LABEL_MIN_SHARE = 7.0
+
+
+def get_recent_month_cols(sales_df, n_months=3, asin_col='ASIN'):
+    """The last `n_months` month columns, oldest first.
+
+    Unlike scatter_price_vs_sales this does not raise when the file has fewer
+    months than requested — it just returns everything available.
+    """
+    month_cols = sorted([c for c in sales_df.columns if c != asin_col])
+    if not month_cols:
+        return []
+    return month_cols[-min(n_months, len(month_cols)):]
+
+
+def get_recent_sales(sales_df, n_months=3, asin_col='ASIN'):
+    """Per-ASIN units sold over the last n_months.
+
+    Returns (DataFrame[ASIN, recent_sales], months_used).
+    """
+    months = get_recent_month_cols(sales_df, n_months, asin_col)
+    if not months:
+        return pd.DataFrame(columns=[asin_col, 'recent_sales']), []
+
+    recent = sales_df[[asin_col] + months].copy()
+    recent['recent_sales'] = recent[months].sum(axis=1)
+    # defensive: one row per ASIN even if the sheet repeats one
+    recent = recent.groupby(asin_col, as_index=False)['recent_sales'].sum()
+
+    return recent, months
+
+
+def assign_cohort(listing_dates):
+    """Bucket listing dates into COHORT_LABELS; NaT -> COHORT_UNKNOWN."""
+    dates = pd.to_datetime(listing_dates, errors='coerce')
+    years = dates.dt.year
+
+    cohort = pd.Series(COHORT_UNKNOWN, index=dates.index, dtype=object)
+    cohort[years <= 2023] = COHORT_LABELS[0]
+    cohort[years.isin([2024, 2025])] = COHORT_LABELS[1]
+    cohort[years >= 2026] = COHORT_LABELS[2]
+
+    return cohort
+
+
+def normalize_brands(brands):
+    """Merge whitespace/case variants of the same brand.
+
+    Returns (key_series, {key: display_name}) where the display name is the
+    most common original spelling seen for that key.
+    """
+    trimmed = brands.fillna('').astype(str).str.strip()
+    keys = trimmed.str.lower().replace('', BRAND_UNKNOWN)
+
+    display = {}
+    for key, group in trimmed.groupby(keys):
+        spellings = group[group != '']
+        display[key] = spellings.mode().iloc[0] if not spellings.empty else BRAND_UNKNOWN
+
+    return keys, display
+
+
+def top_n_shares(labels, values, top_n=5, other_label='其他'):
+    """Rank `labels` by summed `values` and split into top N + remainder.
+
+    Returns (top_df[label, value, share], other_dict_or_None, total).
+    Shares are percentages of `total` and always sum to 100.
+    """
+    grouped = (
+        pd.DataFrame({'label': labels, 'value': values})
+        .groupby('label', as_index=False)['value'].sum()
+        .sort_values('value', ascending=False)
+    )
+
+    total = float(grouped['value'].sum())
+    if total <= 0:
+        return grouped.head(0).assign(share=[]), None, 0.0
+
+    grouped['share'] = grouped['value'] / total * 100
+    top = grouped.head(top_n).reset_index(drop=True)
+    rest = grouped.iloc[top_n:]
+
+    other = None
+    if not rest.empty and rest['value'].sum() > 0:
+        other = {
+            'label': other_label,
+            'value': float(rest['value'].sum()),
+            'share': float(rest['share'].sum()),
+            'count': int(len(rest)),
+        }
+
+    return top, other, total
+
+
+def _share_segment_html(share, color, text, hatched=False):
+    background = color
+    if hatched:
+        # solid base under the stripes so the dark label stays readable in
+        # both the light and dark Streamlit themes
+        background = (
+            f"repeating-linear-gradient(45deg, rgba(107,114,128,0.35) 0 6px, "
+            f"rgba(0,0,0,0) 6px 12px), {SHARE_OTHER_FILL}"
+        )
+
+    label = ''
+    if text and share >= IN_BAR_LABEL_MIN_SHARE:
+        label = (
+            "<span style='font-size:0.78rem;font-weight:600;color:#1F2937;"
+            "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+            f"{text}</span>"
+        )
+
+    return (
+        f"<div style='flex:0 0 {share:.4f}%;max-width:{share:.4f}%;height:38px;"
+        f"background:{background};display:flex;align-items:center;"
+        "justify-content:center;overflow:hidden;'>"
+        f"{label}</div>"
+    )
+
+
+def render_share_bar(segments, other=None):
+    """Render a 100%-stacked share bar plus a legend underneath.
+
+    `segments` is a list of (label, share, color). `other` is an optional dict
+    with keys label/share (and optionally count) rendered as a hatched
+    remainder. Shares are percentages and are expected to sum to 100.
+    """
+    if not segments and other is None:
+        return
+
+    bars = [
+        _share_segment_html(share, color, f"{share:.0f}%")
+        for _, share, color in segments
+    ]
+
+    legend_items = [
+        (label, share, color, False) for label, share, color in segments
+    ]
+
+    if other is not None:
+        other_text = other['label']
+        if other.get('count'):
+            other_text = f"{other['label']} ({other['count']})"
+        bars.append(
+            _share_segment_html(
+                other['share'],
+                SHARE_OTHER_COLOR,
+                f"{other_text} {other['share']:.0f}%",
+                hatched=True,
+            )
+        )
+        legend_items.append((other_text, other['share'], SHARE_OTHER_COLOR, True))
+
+    legend = []
+    for label, share, color, hatched in legend_items:
+        dot_style = (
+            f"width:10px;height:10px;border-radius:2px;background:{color};"
+            "flex:0 0 auto;"
+        )
+        if hatched:
+            dot_style += "opacity:0.55;"
+        legend.append(
+            "<span style='display:inline-flex;align-items:center;gap:6px;"
+            "font-size:0.82rem;line-height:1.4;'>"
+            f"<span style='{dot_style}'></span>"
+            f"<span>{label}</span>"
+            f"<span style='opacity:0.65;'>{share:.0f}%</span>"
+            "</span>"
+        )
+
+    html = (
+        "<div style='display:flex;width:100%;border-radius:6px;overflow:hidden;'>"
+        + "".join(bars)
+        + "</div>"
+        "<div style='display:flex;flex-wrap:wrap;gap:8px 18px;margin:10px 0 4px 0;'>"
+        + "".join(legend)
+        + "</div>"
+    )
+
+    st.markdown(html, unsafe_allow_html=True)
+

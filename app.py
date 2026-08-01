@@ -165,9 +165,10 @@ def load_data():
     prices = merged.drop(columns=['qty'])
 
     # by cohort
-    df1 = df[df['listing_date'].dt.year <= 2023]
-    df2 = df[df['listing_date'].dt.year.isin([2024, 2025])]
-    df3 = df[df['listing_date'].dt.year >= 2026]  # catch-all: 2026 and later
+    cohort = assign_cohort(df['listing_date'])
+    df1 = df[cohort == COHORT_LABELS[0]]
+    df2 = df[cohort == COHORT_LABELS[1]]
+    df3 = df[cohort == COHORT_LABELS[2]]
 
     def get_price_sales_by_cohort(df, sales, prices):
         asins_list = df.ASIN.values.tolist()
@@ -494,7 +495,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     # st.write(summary2)
     # st.write(summary3)
 
-    tabs = st.tabs(["单品", "总体"])
+    tabs = st.tabs(["单品", "总体", "市场份额"])
 
     with tabs[0]:  # Micro tab
         st.markdown("#### 单品分析")
@@ -670,7 +671,115 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         # Show pct changes
             # st.session_state['cohort_summary']
         # st.dataframe(pct_changes)
-            
+
+    with tabs[2]:  # Market share / concentration tab
+        st.markdown("#### 市场份额")
+
+        recent, recent_months = get_recent_sales(sales, n_months=N_MONTHS)
+
+        # one row per listing, with its brand, cohort and recent sales
+        share_df = df[['ASIN', 'brand', 'listing_date']].copy()
+        share_df['brand_key'], brand_names = normalize_brands(share_df['brand'])
+        share_df['cohort'] = assign_cohort(share_df['listing_date'])
+        share_df = share_df.merge(recent, on='ASIN', how='left')
+        share_df['recent_sales'] = share_df['recent_sales'].fillna(0)
+
+        total_sales = float(share_df['recent_sales'].sum())
+        n_listings = len(share_df)
+        n_brands = share_df['brand_key'].nunique()
+        newest_listings = int((share_df['cohort'] == COHORT_LABELS[2]).sum())
+
+        if recent_months:
+            st.caption(
+                f"最近{len(recent_months)}个月 ({recent_months[0]} ~ {recent_months[-1]})"
+                f" · 总销量 {total_sales:,.0f} 件"
+            )
+
+        def _share_of_top(labels, values, n):
+            top, _, total = top_n_shares(labels, values, top_n=n)
+            if total <= 0:
+                return None
+            return top['share'].sum()
+
+        def _pct_text(value):
+            return "—" if value is None else f"{value:.0f}%"
+
+        brand_top5 = _share_of_top(share_df['brand_key'], share_df['recent_sales'], 5)
+        brand_top10 = _share_of_top(share_df['brand_key'], share_df['recent_sales'], 10)
+        asin_top5 = _share_of_top(share_df['ASIN'], share_df['recent_sales'], 5)
+        asin_top10 = _share_of_top(share_df['ASIN'], share_df['recent_sales'], 10)
+
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("品牌数", f"{n_brands:,}")
+        with k2:
+            st.metric("商品数", f"{n_listings:,}")
+            if n_listings:
+                st.caption(
+                    f"{COHORT_LABELS[2]}新品: "
+                    f"{newest_listings / n_listings * 100:.0f}% ({newest_listings}个)"
+                )
+        with k3:
+            st.metric("Top 5 品牌份额", _pct_text(brand_top5))
+            st.caption(f"Top 10: {_pct_text(brand_top10)}")
+        with k4:
+            st.metric("Top 5 单品份额", _pct_text(asin_top5))
+            st.caption(f"Top 10: {_pct_text(asin_top10)}")
+
+        st.write("")
+
+        if total_sales <= 0:
+            st.info("最近3个月无销量数据")
+        else:
+            # --- top single products ---
+            st.markdown("#### 单品集中度")
+            asin_labels = share_df['brand_key'].map(brand_names) + " · " + share_df['ASIN']
+            top_asins, other_asins, _ = top_n_shares(
+                asin_labels, share_df['recent_sales'], top_n=5, other_label='其他单品'
+            )
+            render_share_bar(
+                [
+                    (row['label'], row['share'], SHARE_PALETTE[i])
+                    for i, row in top_asins.iterrows()
+                ],
+                other=other_asins,
+            )
+
+            st.write("")
+
+            # --- top brands ---
+            st.markdown("#### 品牌集中度")
+            top_brands, other_brands, _ = top_n_shares(
+                share_df['brand_key'].map(brand_names),
+                share_df['recent_sales'],
+                top_n=5,
+                other_label='其他品牌',
+            )
+            render_share_bar(
+                [
+                    (row['label'], row['share'], SHARE_PALETTE[i])
+                    for i, row in top_brands.iterrows()
+                ],
+                other=other_brands,
+            )
+
+            st.write("")
+
+            # --- listing age cohorts (chronological, no remainder) ---
+            st.markdown("#### 上架时间分布")
+            cohort_order = [c for c in COHORT_LABELS + [COHORT_UNKNOWN]
+                            if (share_df['cohort'] == c).any()]
+            cohort_sales = share_df.groupby('cohort')['recent_sales'].sum()
+            cohort_counts = share_df['cohort'].value_counts()
+            render_share_bar([
+                (
+                    f"{c} ({int(cohort_counts[c])}个)",
+                    cohort_sales.get(c, 0) / total_sales * 100,
+                    SHARE_PALETTE[i] if i < len(SHARE_PALETTE) else SHARE_OTHER_COLOR,
+                )
+                for i, c in enumerate(cohort_order)
+            ])
+
     st.markdown("#### 竞争对手分析")
 
     # # get cutoff qty for our asin

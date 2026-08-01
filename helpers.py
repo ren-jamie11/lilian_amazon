@@ -811,6 +811,58 @@ def get_recent_sales(sales_df, n_months=3, asin_col='ASIN'):
     return recent, months
 
 
+def get_recent_revenue(sales_df, prices_df, n_months=3, asin_col='ASIN'):
+    """Per-ASIN revenue over the last n_months: sum of units[m] * price[m].
+
+    Strict sumproduct — a month with units sold but no price contributes 0
+    rather than being estimated, so the total always traces back to the sheet.
+    Prices here are listing prices (the per-unit qty division in load_data is
+    commented out), so this is GMV per listing.
+
+    Returns (DataFrame[ASIN, recent_revenue], months_used).
+    """
+    months = get_recent_month_cols(sales_df, n_months, asin_col)
+    months = [m for m in months if m in prices_df.columns]
+    if not months:
+        return pd.DataFrame(columns=[asin_col, 'recent_revenue']), []
+
+    units = sales_df[[asin_col] + months].groupby(asin_col, as_index=False).sum()
+    price = prices_df[[asin_col] + months].drop_duplicates(subset=asin_col)
+
+    # merge on ASIN — the two sheets are not guaranteed to be row-aligned
+    merged = units.merge(price, on=asin_col, how='left', suffixes=('_units', '_price'))
+
+    revenue = 0
+    for m in months:
+        revenue = revenue + merged[f'{m}_units'] * merged[f'{m}_price'].fillna(0)
+
+    return merged[[asin_col]].assign(recent_revenue=revenue), months
+
+
+# (divisor, suffix, decimals) largest first
+_USD_UNITS = ((1e9, 'B', 2), (1e6, 'M', 2), (1e3, 'k', 1))
+
+
+def format_usd_compact(value):
+    """Format a dollar amount compactly: $2.27M, $226.8k, $950."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = 0.0
+    if value != value:  # NaN
+        value = 0.0
+
+    sign = '-' if value < 0 else ''
+    magnitude = abs(value)
+
+    for divisor, suffix, decimals in _USD_UNITS:
+        # promote just below the divisor so 999,999 reads $1.00M, not $1000.0k
+        if magnitude >= divisor * 0.9995:
+            return f"{sign}${magnitude / divisor:.{decimals}f}{suffix}"
+
+    return f"{sign}${magnitude:,.0f}"
+
+
 def assign_cohort(listing_dates):
     """Bucket listing dates into COHORT_LABELS; NaT -> COHORT_UNKNOWN."""
     dates = pd.to_datetime(listing_dates, errors='coerce')
@@ -873,15 +925,10 @@ def top_n_shares(labels, values, top_n=5, other_label='其他'):
     return top, other, total
 
 
-def _share_segment_html(share, color, text, hatched=False):
-    background = color
-    if hatched:
-        # solid base under the stripes so the dark label stays readable in
-        # both the light and dark Streamlit themes
-        background = (
-            f"repeating-linear-gradient(45deg, rgba(107,114,128,0.35) 0 6px, "
-            f"rgba(0,0,0,0) 6px 12px), {SHARE_OTHER_FILL}"
-        )
+def _share_segment_html(share, color, text, muted=False):
+    # the remainder segment should recede behind the ranked ones — flat light
+    # grey, opaque so the dark label stays readable in either Streamlit theme
+    background = SHARE_OTHER_FILL if muted else color
 
     label = ''
     if text and share >= IN_BAR_LABEL_MIN_SHARE:
@@ -903,7 +950,7 @@ def render_share_bar(segments, other=None):
     """Render a 100%-stacked share bar plus a legend underneath.
 
     `segments` is a list of (label, share, color). `other` is an optional dict
-    with keys label/share (and optionally count) rendered as a hatched
+    with keys label/share (and optionally count) rendered as a muted grey
     remainder. Shares are percentages and are expected to sum to 100.
     """
     if not segments and other is None:
@@ -925,21 +972,22 @@ def render_share_bar(segments, other=None):
         bars.append(
             _share_segment_html(
                 other['share'],
-                SHARE_OTHER_COLOR,
+                SHARE_OTHER_FILL,
                 f"{other_text} {other['share']:.0f}%",
-                hatched=True,
+                muted=True,
             )
         )
-        legend_items.append((other_text, other['share'], SHARE_OTHER_COLOR, True))
+        legend_items.append((other_text, other['share'], SHARE_OTHER_FILL, True))
 
     legend = []
-    for label, share, color, hatched in legend_items:
+    for label, share, color, muted in legend_items:
         dot_style = (
             f"width:10px;height:10px;border-radius:2px;background:{color};"
             "flex:0 0 auto;"
         )
-        if hatched:
-            dot_style += "opacity:0.55;"
+        if muted:
+            # near-white chip needs an outline to be visible on a light theme
+            dot_style += "box-shadow:inset 0 0 0 1px rgba(107,114,128,0.35);"
         legend.append(
             "<span style='display:inline-flex;align-items:center;gap:6px;"
             "font-size:0.82rem;line-height:1.4;'>"

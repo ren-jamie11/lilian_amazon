@@ -676,6 +676,8 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         st.markdown("#### 市场份额")
 
         recent, recent_months = get_recent_sales(sales, n_months=N_MONTHS)
+        revenue, _ = get_recent_revenue(sales, prices, n_months=N_MONTHS)
+        total_revenue = float(revenue['recent_revenue'].sum()) if not revenue.empty else 0.0
 
         # one row per listing, with its brand, cohort and recent sales
         share_df = df[['ASIN', 'brand', 'listing_date']].copy()
@@ -691,8 +693,8 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
         if recent_months:
             st.caption(
-                f"最近{len(recent_months)}个月 ({recent_months[0]} ~ {recent_months[-1]})"
-                f" · 总销量 {total_sales:,.0f} 件"
+                f"总销量 {total_sales:,.0f} 件 · 总销售额 {format_usd_compact(total_revenue)}"
+                
             )
 
         def _share_of_top(labels, values, n):
@@ -746,6 +748,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             )
 
             st.write("")
+            st.write("")
 
             # --- top brands ---
             st.markdown("#### 品牌集中度")
@@ -764,6 +767,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             )
 
             st.write("")
+            st.write("")
 
             # --- listing age cohorts (chronological, no remainder) ---
             st.markdown("#### 上架时间分布")
@@ -780,6 +784,9 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                 for i, c in enumerate(cohort_order)
             ])
 
+            st.write("")
+
+    st.write("")
     st.markdown("#### 竞争对手分析")
 
     # # get cutoff qty for our asin

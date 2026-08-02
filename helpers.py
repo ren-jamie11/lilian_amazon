@@ -9,6 +9,14 @@ import matplotlib.dates as mdates
 
 from datetime import datetime
 
+# Cohort labels are Chinese and reach matplotlib via the scatter legend, but
+# matplotlib's default font has no CJK glyphs and would draw them as tofu boxes.
+# Fall through to the first available; DejaVu Sans is the stock last resort.
+plt.rcParams['font.sans-serif'] = [
+    'Microsoft YaHei', 'SimHei', 'Noto Sans CJK SC', 'DejaVu Sans',
+] + plt.rcParams['font.sans-serif']
+plt.rcParams['axes.unicode_minus'] = False  # keep minus signs with a CJK font
+
 
 def get_today_yyyymm():
     return datetime.today().strftime("%Y-%m")
@@ -517,7 +525,7 @@ def plot_sales_timeseries(
 
 @st.cache_data
 def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_asins=None, top_n=3, 
-                           cohort_asins=None, cohort_labels=["Before 2024", "2024-26", "2026 and after"],
+                           cohort_asins=None, cohort_labels=None,
                            dot_transparency = 0.7):
     """
     Scatter plot of price vs total sales for the last n_months.
@@ -565,7 +573,8 @@ def scatter_price_vs_sales(prices_df, sales_df, n_months, asin_col='ASIN', our_a
 
     if cohort_asins is None:
         cohort_asins = []
-    cohort_colors = ['green', 'blue', 'orange']  # red is reserved for our_asins
+    # red is reserved for our_asins; 4 colors so the 4-cohort split doesn't wrap
+    cohort_colors = ['green', 'blue', 'orange', 'purple']
     all_cohort_asins = {asin for group in cohort_asins for asin in group}
 
     # "Other" = not in our_asins and not in any cohort
@@ -768,9 +777,14 @@ def plot_price_histogram(df):
 
 # --- Market share / concentration -------------------------------------------
 
-COHORT_LABELS = ['2023及以前', '2024-2025', '2026及以后']
 COHORT_UNKNOWN = '未知'
 BRAND_UNKNOWN = '未知'
+
+# Cohorts split the most recent years out individually and collapse the rest.
+# Once this month of the anchor year is reached, the current year has enough
+# data to stand on its own and the oldest individual year is folded into the
+# trailing bucket — 3 cohorts from July onwards, 4 before it.
+COHORT_SPLIT_MONTH = 7
 
 # rank 1 -> 5, anchored on the accent blue used elsewhere in the app.
 # Kept light enough that the dark in-segment label stays legible on rank 1.
@@ -976,15 +990,65 @@ def format_growth_pct(growth):
     return text
 
 
-def assign_cohort(listing_dates):
-    """Bucket listing dates into COHORT_LABELS; NaT -> COHORT_UNKNOWN."""
+def get_reference_month(sales_df, asin_col='ASIN'):
+    """The month the cohort split is anchored to: the workbook's latest month.
+
+    Anchoring on the data rather than the clock means the same file always
+    produces the same cohorts, however long after export it is opened. Falls
+    back to today only when the frame carries no month columns at all.
+    """
+    months = get_recent_month_cols(sales_df, 1, asin_col)
+    if not months:
+        return pd.Timestamp.today().normalize()
+
+    return pd.to_datetime(months[-1])
+
+
+def get_cohort_years(reference):
+    """Years to split out individually, NEWEST FIRST.
+
+    Two years once the anchor reaches COHORT_SPLIT_MONTH (the current year has
+    half a year of data behind it), three before that — so an early-in-the-year
+    anchor keeps one extra year visible instead of burying it in the remainder.
+    """
+    ref = pd.Timestamp(reference)
+    n_years = 2 if ref.month >= COHORT_SPLIT_MONTH else 3
+
+    return [ref.year - i for i in range(n_years)]
+
+
+def get_cohort_labels(reference):
+    """Cohort labels for `reference`, OLDEST FIRST — so labels[-1] is newest.
+
+    e.g. anchor 2026-07 -> ['2024及以前', '2025', '2026及以后']
+         anchor 2026-02 -> ['2023及以前', '2024', '2025', '2026及以后']
+    """
+    years = get_cohort_years(reference)  # newest first
+
+    labels = [f"{years[0]}及以后"] + [str(y) for y in years[1:]]
+    labels.append(f"{years[-1] - 1}及以前")
+
+    return labels[::-1]
+
+
+def assign_cohort(listing_dates, reference):
+    """Bucket listing dates into get_cohort_labels(reference); NaT -> COHORT_UNKNOWN.
+
+    `reference` is required on purpose: defaulting it to today would quietly
+    reintroduce the clock-anchored drift this replaced.
+    """
     dates = pd.to_datetime(listing_dates, errors='coerce')
     years = dates.dt.year
 
+    labels = get_cohort_labels(reference)       # oldest first
+    split_years = get_cohort_years(reference)   # newest first
+
     cohort = pd.Series(COHORT_UNKNOWN, index=dates.index, dtype=object)
-    cohort[years <= 2023] = COHORT_LABELS[0]
-    cohort[years.isin([2024, 2025])] = COHORT_LABELS[1]
-    cohort[years >= 2026] = COHORT_LABELS[2]
+    cohort[years < split_years[-1]] = labels[0]
+    for offset, year in enumerate(reversed(split_years)):
+        cohort[years == year] = labels[offset + 1]
+    # listings dated past the anchor year still belong to the newest cohort
+    cohort[years >= split_years[0]] = labels[-1]
 
     return cohort
 

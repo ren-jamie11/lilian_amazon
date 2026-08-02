@@ -164,11 +164,11 @@ def load_data():
     # merged[month_cols] = merged[month_cols].div(merged['qty'], axis=0)
     prices = merged.drop(columns=['qty'])
 
-    # by cohort
-    cohort = assign_cohort(df['listing_date'])
-    df1 = df[cohort == COHORT_LABELS[0]]
-    df2 = df[cohort == COHORT_LABELS[1]]
-    df3 = df[cohort == COHORT_LABELS[2]]
+    # by cohort — anchored to the workbook's latest month, so the number of
+    # cohorts (3 or 4) and their labels come from the data, not the clock
+    reference_month = get_reference_month(sales)
+    cohort_labels = get_cohort_labels(reference_month)
+    cohort = assign_cohort(df['listing_date'], reference_month)
 
     def get_price_sales_by_cohort(df, sales, prices):
         asins_list = df.ASIN.values.tolist()
@@ -176,12 +176,13 @@ def load_data():
         prices_cohort = prices[prices.ASIN.isin(asins_list)]
         return sales_cohort, prices_cohort, asins_list
 
-    sales1, prices1, asins1 = get_price_sales_by_cohort(df1, sales, prices)
-    sales2, prices2, asins2 = get_price_sales_by_cohort(df2, sales, prices)
-    sales3, prices3, asins3 = get_price_sales_by_cohort(df3, sales, prices)
+    cohort_dfs = [df[cohort == label] for label in cohort_labels]
+    cohort_slices = [get_price_sales_by_cohort(d, sales, prices) for d in cohort_dfs]
 
-    st.session_state['asins_by_cohort'] = [asins1, asins2, asins3]
-    
+    st.session_state['reference_month'] = reference_month
+    st.session_state['cohort_labels'] = cohort_labels
+    st.session_state['asins_by_cohort'] = [asins for _, _, asins in cohort_slices]
+
     # summary
     summary = summarize_price_sales(sales, prices, df)
     pct_changes = summary[['month','sales_growth_yoy', 'n_listings_growth_yoy']]
@@ -190,9 +191,10 @@ def load_data():
     pct_changes = pct_changes.set_index("month").T
 
     # total sales graph for each cohort
-    st.session_state['summary1'] = summarize_price_sales(sales1, prices1, df1)
-    st.session_state['summary2'] = summarize_price_sales(sales2, prices2, df2)
-    st.session_state['summary3'] = summarize_price_sales(sales3, prices3, df3)
+    st.session_state['cohort_summaries'] = [
+        summarize_price_sales(sales_c, prices_c, df_c)
+        for (sales_c, prices_c, _), df_c in zip(cohort_slices, cohort_dfs)
+    ]
 
     # store session state
     st.session_state['sales'] = sales
@@ -462,10 +464,10 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     prices = st.session_state['prices']
     df = st.session_state["df"]
     summary = st.session_state['summary']
-    summary1 = st.session_state['summary1']
-    summary2 = st.session_state['summary2']
-    summary3 = st.session_state['summary3']
     pct_changes = st.session_state['pct_changes']
+    reference_month = st.session_state['reference_month']
+    cohort_labels = st.session_state['cohort_labels']
+    cohort_summaries = st.session_state['cohort_summaries']
 
     def extract_cohort_row(label, summary):
         if summary.empty:
@@ -476,9 +478,8 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
     rows = [
         r for r in (
-            extract_cohort_row('2024前', summary1),
-            extract_cohort_row('2024-25', summary2),
-            extract_cohort_row('2026', summary3),
+            extract_cohort_row(label, cohort_summary)
+            for label, cohort_summary in zip(cohort_labels, cohort_summaries)
         )
         if r is not None  # drop cohorts with no listings (avoids shape mismatch)
     ]
@@ -491,9 +492,8 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
     OUR_BRAND_ASINS = df[df.brand.str.lower().isin([b.lower() for b in OUR_BRANDS])].ASIN.values.tolist()
     
-    # st.write(summary1)
-    # st.write(summary2)
-    # st.write(summary3)
+    # for s in cohort_summaries:
+    #     st.write(s)
 
     tabs = st.tabs(["单品", "总体", "市场份额"])
 
@@ -527,135 +527,68 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
                 st.session_state['sales'], 
                 n_months=N_MONTHS, 
                 our_asins=OUR_BRAND_ASINS,
-                cohort_asins=st.session_state['asins_by_cohort'] if st.session_state['show_cohort'] else None
+                cohort_asins=st.session_state['asins_by_cohort'] if st.session_state['show_cohort'] else None,
+                cohort_labels=cohort_labels
             )
 
             st.toggle("Show cohort", key='show_cohort')
+
+    def cohort_summary_selector(key, label="Cohort"):
+        """Selectbox over 总 + the dynamic cohort labels; returns the chosen frame."""
+        options = ['总'] + cohort_labels
+        # a previously loaded workbook may have left a label that no longer
+        # exists; Streamlit raises if session_state holds a value outside options
+        if key in st.session_state and st.session_state[key] not in options:
+            del st.session_state[key]
+
+        st.selectbox(label, options=options, key=key)
+        idx = options.index(st.session_state[key])
+        selected = summary if idx == 0 else cohort_summaries[idx - 1]
+
+        # a cohort can legitimately have no listings; plot_ts_two_cols draws
+        # nothing for an empty frame, so say so rather than leaving a blank gap
+        if selected.empty:
+            st.caption("该组暂无数据")
+
+        return selected
 
     with tabs[1]:  # Macro tab
         c3, c4 = st.columns([5,5])
         st.write(st.session_state['summary'])
         with c3:
             st.markdown("#### 平均月销量")
-            st.selectbox("Cohort", options = ['总','2024前', '2024-2026', '2026后'], key='selected_cohort_1')
-            if st.session_state['selected_cohort_1'] == '总':
-                plot_ts_two_cols(
-                st.session_state['summary'], 
-                'month', 
-                'sales_per_listing', 
+            plot_ts_two_cols(
+                cohort_summary_selector('selected_cohort_1'),
+                'month',
+                'sales_per_listing',
                 'n_listings',
-                start_date='2022-01', 
+                start_date='2022-01',
                 end_date=TODAY
             )
-            elif st.session_state['selected_cohort_1'] == '2024前':
-                plot_ts_two_cols(
-                    st.session_state['summary1'], 
-                    'month', 
-                    'sales_per_listing', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            elif st.session_state['selected_cohort_1'] == '2024-2026':
-                plot_ts_two_cols(
-                    st.session_state['summary2'], 
-                    'month', 
-                    'sales_per_listing', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            else:
-                plot_ts_two_cols(
-                        st.session_state['summary3'], 
-                        'month', 
-                        'sales_per_listing', 
-                        'n_listings',
-                        start_date='2022-01', 
-                        end_date=TODAY
-                    )
 
             st.write('')
             st.markdown("#### 平均价")
-            st.selectbox("Cohort", options = ['总','2024前', '2024-2026', '2026后'], key='selected_cohort_2')
-            if st.session_state['selected_cohort_2'] == '总':
-                plot_ts_two_cols(
-                st.session_state['summary'], 
-                'month', 
-                'wavg_price', 
+            plot_ts_two_cols(
+                cohort_summary_selector('selected_cohort_2'),
+                'month',
+                'wavg_price',
                 'n_listings',
-                start_date='2022-01', 
+                start_date='2022-01',
                 end_date=TODAY
             )
-            elif st.session_state['selected_cohort_2'] == '2024前':
-                plot_ts_two_cols(
-                    st.session_state['summary1'], 
-                    'month', 
-                    'wavg_price', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            elif st.session_state['selected_cohort_2'] == '2024-2026':
-                plot_ts_two_cols(
-                    st.session_state['summary2'], 
-                    'month', 
-                    'wavg_price', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            else:
-                plot_ts_two_cols(
-                        st.session_state['summary3'], 
-                        'month', 
-                        'wavg_price', 
-                        'n_listings',
-                        start_date='2022-01', 
-                        end_date=TODAY
-                    )
-            
+
 
         with c4:
             st.markdown("#### 总销量")
-            st.selectbox("Cohort", options = ['总','2024前', '2024-2026', '2026后'], key='selected_cohort')
-            if st.session_state['selected_cohort'] == '总':
-                plot_ts_two_cols(
-                st.session_state['summary'], 
-                'month', 
-                'total_sales', 
+            plot_ts_two_cols(
+                cohort_summary_selector('selected_cohort'),
+                'month',
+                'total_sales',
                 'n_listings',
-                start_date='2022-01', 
+                start_date='2022-01',
                 end_date=TODAY
             )
-            elif st.session_state['selected_cohort'] == '2024前':
-                plot_ts_two_cols(
-                    st.session_state['summary1'], 
-                    'month', 
-                    'total_sales', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            elif st.session_state['selected_cohort'] == '2024-2026':
-                plot_ts_two_cols(
-                    st.session_state['summary2'], 
-                    'month', 
-                    'total_sales', 
-                    'n_listings',
-                    start_date='2022-01', 
-                    end_date=TODAY
-                )
-            else:
-                plot_ts_two_cols(
-                        st.session_state['summary3'], 
-                        'month', 
-                        'total_sales', 
-                        'n_listings',
-                        start_date='2022-01', 
-                        end_date=TODAY
-                    )
-                
+
             st.write('')
 
             def build_yoy_rows(monthly, format_value):
@@ -709,14 +642,14 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         # one row per listing, with its brand, cohort and recent sales
         share_df = df[['ASIN', 'brand', 'listing_date']].copy()
         share_df['brand_key'], brand_names = normalize_brands(share_df['brand'])
-        share_df['cohort'] = assign_cohort(share_df['listing_date'])
+        share_df['cohort'] = assign_cohort(share_df['listing_date'], reference_month)
         share_df = share_df.merge(recent, on='ASIN', how='left')
         share_df['recent_sales'] = share_df['recent_sales'].fillna(0)
 
         total_sales = float(share_df['recent_sales'].sum())
         n_listings = len(share_df)
         n_brands = share_df['brand_key'].nunique()
-        newest_listings = int((share_df['cohort'] == COHORT_LABELS[2]).sum())
+        newest_listings = int((share_df['cohort'] == cohort_labels[-1]).sum())
 
         if recent_months:
             st.caption(
@@ -745,7 +678,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
             st.metric("商品数", f"{n_listings:,}")
             if n_listings:
                 st.caption(
-                    f"{COHORT_LABELS[2]}新品: "
+                    f"{cohort_labels[-1]}新品: "
                     f"{newest_listings / n_listings * 100:.0f}% ({newest_listings}个)"
                 )
         with k3:
@@ -798,7 +731,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
 
             # --- listing age cohorts (chronological, no remainder) ---
             st.markdown("#### 上架时间分布")
-            cohort_order = [c for c in COHORT_LABELS + [COHORT_UNKNOWN]
+            cohort_order = [c for c in cohort_labels + [COHORT_UNKNOWN]
                             if (share_df['cohort'] == c).any()]
             cohort_sales = share_df.groupby('cohort')['recent_sales'].sum()
             cohort_counts = share_df['cohort'].value_counts()

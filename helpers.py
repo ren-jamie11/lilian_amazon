@@ -1185,3 +1185,33 @@ def render_share_bar(segments, other=None):
 
     st.markdown(html, unsafe_allow_html=True)
 
+
+@st.cache_data
+def competitor_filter_options(df, sales, reference_month, n_months=3, top_n=5):
+    """Per-ASIN cohort/brand attributes plus the market's top brands.
+
+    Ranking is by units sold over the last `n_months` across the whole market,
+    the same basis as the 品牌集中度 bar, so the two agree. BRAND_UNKNOWN is
+    dropped first — an unnamed brand is not something you'd filter down to, and
+    a category with many blank 品牌 cells could otherwise fill a top slot.
+
+    Returns (attrs[ASIN, cohort, brand_key], top_brand_keys, brand_names).
+    """
+    attrs = df[['ASIN', 'brand', 'listing_date']].copy()
+    attrs['brand_key'], brand_names = normalize_brands(attrs['brand'])
+    attrs['cohort'] = assign_cohort(attrs['listing_date'], reference_month)
+    attrs = attrs[['ASIN', 'cohort', 'brand_key']]
+
+    recent, _ = get_recent_sales(sales, n_months=n_months)
+    ranked = attrs.merge(recent, on='ASIN', how='left')
+    ranked['recent_sales'] = ranked['recent_sales'].fillna(0)
+    ranked = ranked[ranked['brand_key'] != BRAND_UNKNOWN]
+
+    # no months in the file, or nothing sold recently -> no ranking to offer
+    if ranked.empty:
+        return attrs, [], brand_names
+
+    top, _, _ = top_n_shares(ranked['brand_key'], ranked['recent_sales'], top_n=top_n)
+
+    return attrs, top['label'].tolist(), brand_names
+

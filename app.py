@@ -5,13 +5,6 @@ from helpers import *
 import numpy as np
 from PIL import UnidentifiedImageError
 
-from pandas.api.types import (
-    is_categorical_dtype,
-    is_datetime64_any_dtype,
-    is_numeric_dtype,
-    is_object_dtype,
-)
-
 if 'sales' not in st.session_state:
     st.session_state['sales'] = None
 
@@ -40,6 +33,9 @@ st.header("📈 Amazon 产品生命周期分析")
 ITEM_COLS = ['ASIN', 'SKU', '品牌','URL', '商品主图', '所属类目', '商品标题', '上架时间']
 ITEM_COLS_NEW = ['ASIN', 'SKU', 'brand','url', 'image_path','category', 'product_title', 'listing_date']
 DISPLAY_COLS = ['ASIN', 'brand','url', 'image_path','product_title', 'listing_date']
+
+# most listings the image grid will render before truncating
+IMAGE_GRID_LIMIT = 100
 
 
 def _month_key(col):
@@ -213,198 +209,48 @@ if st.session_state.get('load_error'):
     st.error(st.session_state['load_error'])
 
 
-# --- Callbacks ---
-def add_keyword_1(column):
-    kw = st.session_state[f"new_keyword_{column}"].strip()
-    if kw:
-        st.session_state[f"keywords_{column}"].add(kw)
-    st.session_state[f"new_keyword_{column}"] = ""  # clear input
-    # ensure the new keyword appears selected
-    st.session_state[f"selected_keywords_{column}"] = sorted(st.session_state[f"keywords_{column}"])
+def drop_stale_selection(key, options):
+    """Forget a session value that is no longer one of `options`.
 
-def on_multiselect_change(column):
-    selected = set(st.session_state[f"keyword_multiselect_{column}"])
-    # Remove anything unselected
-    st.session_state[f"keywords_{column}"].intersection_update(selected)
-    # Sync selected list
-    st.session_state[f"selected_keywords_{column}"] = sorted(st.session_state[f"keywords_{column}"])
+    Cohort labels and brand names are derived from the workbook, so a newly
+    loaded file can leave session_state holding a value Streamlit no longer
+    offers — which it raises on.
+    """
+    if key in st.session_state and st.session_state[key] not in options:
+        del st.session_state[key]
 
 
-def filter_rows_by_all_keywords(df, col, keywords):
-    if not keywords or len(keywords) == 0:
-        return df
-    
-    def contains_all_keywords(cell):
-        # Handle NaN or None
-        if cell is None:
-            return False
+def rival_price_slider(rival_df, key='rival_price'):
+    """Whole-dollar price range slider over `rival_df`.
 
-        # Handle numpy arrays, lists, tuples, sets uniformly
-        if isinstance(cell, (np.ndarray, list, tuple, set)):
-            cell_iterable = cell
-        else:
-            # Try to detect NaN scalars
-            if pd.isna(cell):
-                return False
-            cell_iterable = [cell]
+    Returns the (low, high) tuple, or None when there is nothing to slide over
+    — an empty rival set, in which case st.slider's bounds would be degenerate.
+    """
+    prices = pd.to_numeric(rival_df['price'], errors='coerce').dropna()
+    if prices.empty:
+        st.caption("价格")
+        st.caption("暂无数据")
+        return None
 
-        # Lowercase all items for case-insensitive comparison
-        cell_strs = [str(item).lower() for item in cell_iterable]
+    pmin = float(np.floor(prices.min()))
+    pmax = float(np.ceil(prices.max()))
+    if pmax <= pmin:
+        # every listing at the same price — widen so the slider has a range
+        pmax = pmin + 1.0
 
-        # Check if every keyword appears in any of the cell strings
-        return all(
-            any(keyword.lower() in s for s in cell_strs)
-            for keyword in keywords
+    # the bounds move with 最少平均月销量, so clamp the stored selection into
+    # them rather than letting Streamlit see an out-of-range value
+    if key in st.session_state:
+        low, high = st.session_state[key]
+        st.session_state[key] = (
+            min(max(low, pmin), pmax),
+            max(min(high, pmax), pmin),
         )
 
-    mask = df[col].apply(contains_all_keywords)
-    return df[mask]
-
-def filter_rows_by_exact_keywords(df, col, keywords):
-    if not keywords or len(keywords) == 0:
-        return df
-
-    target_set = set(k.lower() for k in keywords)
-
-    def matches_exact_keywords(cell):
-        # Handle NaN or None
-        if cell is None:
-            return False
-
-        # Handle list-like cells
-        if isinstance(cell, (np.ndarray, list, tuple, set)):
-            cell_iterable = cell
-        else:
-            cell_iterable = [cell]
-
-        # Lowercase all items for comparison
-        cell_set = set(str(item).lower() for item in cell_iterable)
-
-        # Must contain all and only those keywords
-        return cell_set == target_set
-
-    mask = df[col].apply(matches_exact_keywords)
-    return df[mask]
+    return st.slider("价格", pmin, pmax, (pmin, pmax), step=1.0, key=key)
 
 
-def filter_dataframe(df: pd.DataFrame, filter_columns = []) -> pd.DataFrame:
-    """
-    Adds a UI on top of a dataframe to let viewers filter columns.
-    Widgets are arranged in rows of 3 columns.
-    """
-    modify = st.checkbox("Add filters", value = False)
-
-    if not modify:
-        return df
-
-    df = df.copy()
-
-    # Convert datetimes into a standard format
-    for col in df.columns:
-        if is_object_dtype(df[col]):
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except Exception:
-                pass
-
-        if is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].dt.tz_localize(None)
-
-    modification_container = st.container()
-
-    with modification_container:
-        
-        if not filter_columns:
-            filter_columns = df.columns
-                
-        to_filter_columns = st.multiselect("Filter dataframe on", filter_columns)
-
-        # Arrange widgets in rows of 3
-        for i in range(0, len(to_filter_columns), 3):
-            row_cols = st.columns(3)
-            for j, column in enumerate(to_filter_columns[i:i+3]):
-                col_widget = row_cols[j]
-
-                # Handle list/array/dict columns with keyword filtering
-                if df[column].apply(lambda x: isinstance(x, (np.ndarray, list, dict))).any():
-                    
-                    col_widget.write(column)
-
-                    if f"keywords_{column}" not in st.session_state:
-                        st.session_state[f"keywords_{column}"] = set()
-                    if f"selected_keywords_{column}" not in st.session_state:
-                        st.session_state[f"selected_keywords_{column}"] = []
-
-                    col_widget.text_input(
-                        f"Enter {column} keyword:",
-                        key=f"new_keyword_{column}",
-                        on_change=add_keyword_1,
-                        args=(column,),
-                    )
-
-                    col_widget.multiselect(
-                        "Current Keywords:",
-                        options=sorted(st.session_state[f"keywords_{column}"]),
-                        default=sorted(st.session_state[f"keywords_{column}"]),
-                        key=f"keyword_multiselect_{column}",
-                        on_change=on_multiselect_change,
-                        args=(column,),
-                    )
-
-                    exact_match = col_widget.checkbox("Exact match",
-                                            key=f"exact_match_{column}")
-                    
-
-                    curr_filter_list = st.session_state[f"keywords_{column}"]
-                    
-                    if exact_match:
-                        df = filter_rows_by_exact_keywords(df, column, curr_filter_list)
-                    else:
-                        df = filter_rows_by_all_keywords(df, column, curr_filter_list)
-
-                # Treat categorical columns
-                elif is_categorical_dtype(df[column]) or df[column].nunique() < 10:
-                    user_cat_input = col_widget.multiselect(
-                        f"Values for {column}",
-                        df[column].unique(),
-                        default=list(df[column].unique()),
-                    )
-                    df = df[df[column].isin(user_cat_input)]
-
-                # Numeric columns
-                elif is_numeric_dtype(df[column]):
-                    _min = float(df[column].min())
-                    _max = float(df[column].max())
-                    step = (_max - _min) / 100
-                    user_num_input = col_widget.slider(
-                        f"Values for {column}",
-                        _min,
-                        _max,
-                        (_min, _max),
-                        step=step,
-                    )
-                    df = df[df[column].between(*user_num_input)]
-
-                # Datetime columns
-                elif is_datetime64_any_dtype(df[column]):
-                    user_date_input = col_widget.date_input(
-                        f"Values for {column}",
-                        value=(df[column].min(), df[column].max()),
-                    )
-                    if len(user_date_input) == 2:
-                        start_date, end_date = map(pd.to_datetime, user_date_input)
-                        df = df.loc[df[column].between(start_date, end_date)]
-
-                # Fallback: text/regex filtering
-                else:
-                    user_text_input = col_widget.text_input(f"Substring or regex in {column}")
-                    if user_text_input:
-                        df = df[df[column].str.contains(user_text_input, na=False)]
-
-    return df
-
-
-def display_images(trimmed_df, n_display = 100):
+def display_images(trimmed_df, n_display = IMAGE_GRID_LIMIT):
         if len(trimmed_df) > n_display:
             trimmed_sample = trimmed_df.iloc[:n_display, :]
         else:
@@ -458,6 +304,9 @@ N_MONTHS = 3
 TODAY = get_today_yyyymm()
 SALES_CUTOFF_MARGIN = 1
 GROWTH_CUTOFF = 0.5
+
+FILTER_ALL = '全部'
+TOP_BRAND_N = 5
 
 if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     sales =  st.session_state['sales']
@@ -536,10 +385,7 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
     def cohort_summary_selector(key, label="Cohort"):
         """Selectbox over 总 + the dynamic cohort labels; returns the chosen frame."""
         options = ['总'] + cohort_labels
-        # a previously loaded workbook may have left a label that no longer
-        # exists; Streamlit raises if session_state holds a value outside options
-        if key in st.session_state and st.session_state[key] not in options:
-            del st.session_state[key]
+        drop_stale_selection(key, options)
 
         st.selectbox(label, options=options, key=key)
         idx = options.index(st.session_state[key])
@@ -766,33 +612,80 @@ if all(st.session_state.get(k) is not None for k in DATAFRAMES):
         st.error("Please enter a valid integer for cutoff quantity.")
         cutoff_qty = None
 
+    # per-ASIN cohort/brand attributes + the market's top brands, so the three
+    # filters below can be built without re-deriving any of it here
+    rival_attrs, top_brand_keys, rival_brand_names = competitor_filter_options(
+        df, sales, reference_month, n_months=N_MONTHS, top_n=TOP_BRAND_N
+    )
+
     # only calculate rival_asins if cutoff_qty is valid
     if isinstance(cutoff_qty, (int, float)):
         rival_asins = asin_price_sales[asin_price_sales.monthly_sales >= cutoff_qty * SALES_CUTOFF_MARGIN]
         rival_asins = rival_asins.merge(
-            st.session_state['df'][DISPLAY_COLS], 
+            st.session_state['df'][DISPLAY_COLS],
             on='ASIN'
         )
+        rival_asins = rival_asins.merge(rival_attrs, on='ASIN', how='left')
 
     else:
         # return empty DataFrame with same columns
-        rival_asins = pd.DataFrame(columns=['ASIN', 'monthly_sales', 'url', 'product_title', 'listing_date'])
-            
+        rival_asins = pd.DataFrame(
+            columns=['ASIN', 'price', 'total_sales', 'monthly_sales']
+            + DISPLAY_COLS[1:] + ['cohort', 'brand_key']
+        )
+
     ST_COLS = ['ASIN', 'brand','price', 'monthly_sales', 'listing_date','url']
-            
-    filter_columns = ['ASIN', 'brand', 'price'] 
-    trimmed_df = filter_dataframe(rival_asins, filter_columns) 
+
+    # --- filters: cohort / brand / price, always visible, AND-combined ---
+    # all three are built off the post-cutoff rival set rather than off each
+    # other, so the widgets never shift around while you're using them
+    cohort_options = [FILTER_ALL] + cohort_labels          # 未知 deliberately not offered
+    brand_options = [FILTER_ALL] + [rival_brand_names[k] for k in top_brand_keys]
+
+    drop_stale_selection('rival_cohort', cohort_options)
+    drop_stale_selection('rival_brand', brand_options)
+
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        st.selectbox("上架时间", options=cohort_options, key='rival_cohort')
+    with f2:
+        st.selectbox("品牌", options=brand_options, key='rival_brand')
+    with f3:
+        price_range = rival_price_slider(rival_asins)
+
+    trimmed_df = rival_asins
+    if st.session_state['rival_cohort'] != FILTER_ALL:
+        trimmed_df = trimmed_df[trimmed_df['cohort'] == st.session_state['rival_cohort']]
+    if st.session_state['rival_brand'] != FILTER_ALL:
+        # match on the normalized key, not the raw brand string, which carries
+        # case and whitespace variants of the same brand
+        selected_key = top_brand_keys[brand_options.index(st.session_state['rival_brand']) - 1]
+        trimmed_df = trimmed_df[trimmed_df['brand_key'] == selected_key]
+    if price_range is not None:
+        trimmed_df = trimmed_df[trimmed_df['price'].between(*price_range)]
+
     trimmed_df = trimmed_df.sort_values(by = 'monthly_sales', ascending = False )
     # st.dataframe(trimmed_df[ST_COLS])
-    
+
     # DISTRIBUTION OF PRICE
-    avg_price = trimmed_df['price'].mean()
+    if not trimmed_df.empty:
+        avg_price = trimmed_df['price'].mean()
     # st.write(avg_price)
 
 
     # plot_price_histogram(trimmed_df)
 
-    display_images(trimmed_df)
+    if trimmed_df.empty:
+        st.info("没有符合条件的商品")
+    else:
+        n_matched = len(trimmed_df)
+        # display_images caps at 100 — say so rather than truncating silently
+        st.caption(
+            f"共 {n_matched} 个商品"
+            if n_matched <= IMAGE_GRID_LIMIT
+            else f"共 {n_matched} 个商品（显示前{IMAGE_GRID_LIMIT}个）"
+        )
+        display_images(trimmed_df, n_display=IMAGE_GRID_LIMIT)
 
     st.markdown("#### 快速增长的")
 
